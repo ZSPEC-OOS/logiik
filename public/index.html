@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPAWN - Synthetic Programming Agent with Operational Network</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0d1117 100%);
+            color: #e6edf3;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(88, 166, 255, 0.15) 0%, transparent 70%);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        .logo {
+            font-size: 6rem;
+            margin-bottom: 1rem;
+            animation: pulse 3s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.9; }
+        }
+
+        .hero h1 {
+            font-size: 4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #58a6ff 0%, #a371f7 50%, #58a6ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+        }
+
+        .hero .tagline {
+            font-size: 1.5rem;
+            color: #8b949e;
+            max-width: 600px;
+            margin-bottom: 2rem;
+            font-style: italic;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(35, 134, 54, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(88, 166, 255, 0.1);
+            color: #58a6ff;
+            border: 1px solid rgba(88, 166, 255, 0.3);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(88, 166, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        /* Features Grid */
+        .features {
+            padding: 6rem 0;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: #f0f6fc;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: rgba(22, 27, 34, 0.8);
+            border: 1px solid rgba(48, 54, 61, 0.8);
+            border-radius: 12px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(88, 166, 255, 0.5);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 0.5rem;
+            color: #58a6ff;
+        }
+
+        .feature-card p {
+            color: #8b949e;
+            font-size: 0.95rem;
+        }
+
+        /* Status Section */
+        .status {
+            padding: 4rem 0;
+            text-align: center;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(35, 134, 54, 0.2);
+            color: #3fb950;
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-weight: 600;
+            border: 1px solid rgba(35, 134, 54, 0.3);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #3fb950;
+            border-radius: 50%;
+            animation: blink 2s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Footer */
+        footer {
+            padding: 3rem 0;
+            text-align: center;
+            color: #484f58;
+            border-top: 1px solid rgba(48, 54, 61, 0.5);
+        }
+
+        footer a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .hero .tagline {
+                font-size: 1.1rem;
+            }
+
+            .logo {
+                font-size: 4rem;
+            }
+
+            .features h2 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <section class="hero">
+        <div class="logo">🤖</div>
+        <h1>SPAWN</h1>
+        <p class="tagline">"An AI coding assistant that doesn't just write code—it understands, learns, and evolves."</p>
+        <div class="cta-buttons">
+            <a href="#features" class="btn btn-primary">Explore Features</a>
+            <a href="https://github.com/ZSPEC-OOS/logik2" class="btn btn-secondary">View on GitHub</a>
+        </div>
+    </section>
+
+    <section class="features" id="features">
+        <div class="container">
+            <h2>Core Capabilities</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3>Deep Code Intelligence</h3>
+                    <p>AST parsing, semantic analysis, and dependency mapping for true code understanding.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📋</div>
+                    <h3>Multi-Step Planning</h3>
+                    <p>Hierarchical task decomposition with intelligent execution strategies.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💾</div>
+                    <h3>Persistent Memory</h3>
+                    <p>Short-term context management plus long-term learning from every interaction.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛠️</div>
+                    <h3>Advanced Tool System</h3>
+                    <p>20+ specialized tools for comprehensive codebase interaction.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📈</div>
+                    <h3>Self-Improvement</h3>
+                    <p>Learns from code patterns, user preferences, and outcomes to get better over time.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Safety & Validation</h3>
+                    <p>Automatic code validation, rollback capabilities, and configurable guardrails.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="status">
+        <div class="container">
+            <div class="status-badge">
+                <span class="status-dot"></span>
+                <span>System Initializing</span>
+            </div>
+            <p style="margin-top: 1rem; color: #8b949e;">SPAWN is currently in early development</p>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>Built with ❤️ by the SPAWN Team</p>
+            <p style="margin-top: 0.5rem;">
+                <a href="https://github.com/ZSPEC-OOS/logik2">GitHub</a> • 
+                <a href="#">Documentation</a> • 
+                <a href="#">Issues</a>
+            </p>
+        </div>
+    </footer>
+</body>
+</html>
