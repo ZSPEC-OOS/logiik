@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NERO — Training Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="logo">🧠 <span>NERO</span></div>
+
+      <section class="sidebar-section">
+        <h3>Training Controls</h3>
+        <button id="btn-start" class="btn btn-primary" onclick="startTraining()">▶ Start Training</button>
+        <button id="btn-stop" class="btn" onclick="stopTraining()">⏸ Pause</button>
+      </section>
+
+      <section class="sidebar-section">
+        <h3>Teacher API</h3>
+        <label>Model
+          <select id="teacher-model">
+            <option>GPT-4</option>
+            <option>Claude 3 Opus</option>
+            <option>Custom API</option>
+          </select>
+        </label>
+        <label>Examples / Batch
+          <input type="range" id="batch-size" min="5" max="50" value="20"
+                 oninput="document.getElementById('batch-val').textContent=this.value" />
+          <span id="batch-val">20</span>
+        </label>
+        <label>Learning Rate
+          <input type="range" id="lr" min="1" max="100" value="10"
+                 oninput="document.getElementById('lr-val').textContent=(this.value/10000).toFixed(4)" />
+          <span id="lr-val">0.0010</span>
+        </label>
+      </section>
+
+      <section class="sidebar-section">
+        <h3>Knowledge Base</h3>
+        <button class="btn" onclick="exportKnowledge()">📥 Export Package</button>
+      </section>
+
+      <div id="status-badge" class="status-badge idle">● Idle</div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <header class="page-header">
+        <h1>NERO Training Dashboard</h1>
+        <div id="last-updated" class="last-updated"></div>
+      </header>
+
+      <!-- Metric cards -->
+      <div class="metrics-row" id="metrics-row">
+        <div class="card metric-card">
+          <div class="metric-label">📚 Training Examples</div>
+          <div class="metric-value" id="m-examples">—</div>
+          <div class="metric-delta" id="m-examples-d"></div>
+        </div>
+        <div class="card metric-card">
+          <div class="metric-label">🎯 Accuracy</div>
+          <div class="metric-value" id="m-accuracy">—</div>
+          <div class="metric-delta" id="m-accuracy-d"></div>
+        </div>
+        <div class="card metric-card">
+          <div class="metric-label">💾 Knowledge Size</div>
+          <div class="metric-value" id="m-size">—</div>
+          <div class="metric-delta" id="m-size-d"></div>
+        </div>
+        <div class="card metric-card">
+          <div class="metric-label">📦 Checkpoints</div>
+          <div class="metric-value" id="m-checkpoints">—</div>
+          <div class="metric-delta" id="m-checkpoints-d"></div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('monitor', this)">📈 Monitor</button>
+        <button class="tab" onclick="showTab('knowledge', this)">🧠 Knowledge</button>
+        <button class="tab" onclick="showTab('test', this)">💬 Test AI</button>
+      </div>
+
+      <!-- Tab: Monitor -->
+      <div id="tab-monitor" class="tab-panel active">
+        <div class="card" style="margin-bottom:1.5rem;">
+          <h2>Training Curriculum</h2>
+          <div class="phases" id="phases"></div>
+        </div>
+        <div class="card">
+          <h2>Live Metrics</h2>
+          <div id="charts"></div>
+        </div>
+      </div>
+
+      <!-- Tab: Knowledge -->
+      <div id="tab-knowledge" class="tab-panel">
+        <div class="card">
+          <h2>Knowledge Base Explorer</h2>
+          <div class="two-col">
+            <div>
+              <h3>Folders</h3>
+              <div id="kb-folders"><p class="muted">Loading…</p></div>
+            </div>
+            <div>
+              <h3>Recent Examples</h3>
+              <table class="data-table" id="examples-table">
+                <thead><tr><th>Question</th><th>Type</th><th>Difficulty</th><th>Score</th></tr></thead>
+                <tbody>
+                  <tr><td>What causes ocean tides?</td><td>Fact</td><td>Easy</td><td><div class="bar"><div style="width:95%"></div></div> 95%</td></tr>
+                  <tr><td>Explain quantum entanglement</td><td>Concept</td><td>Hard</td><td><div class="bar"><div style="width:72%"></div></div> 72%</td></tr>
+                  <tr><td>Write a creative story opening</td><td>Generation</td><td>Medium</td><td><div class="bar"><div style="width:88%"></div></div> 88%</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Test AI -->
+      <div id="tab-test" class="tab-panel">
+        <div class="card">
+          <h2>Test NERO</h2>
+          <textarea id="question-input" rows="4"
+            placeholder="Ask your trained AI a question…"></textarea>
+          <button class="btn btn-primary" style="margin-top:.75rem;"
+                  onclick="askAI()">🚀 Generate Response</button>
+
+          <div id="response-area" style="display:none; margin-top:1.5rem;">
+            <div class="response-box" id="response-text"></div>
+            <div class="response-metrics">
+              <div class="r-metric"><span class="r-label">Confidence</span><span id="r-conf" class="r-val">—</span></div>
+              <div class="r-metric"><span class="r-label">Originality</span><span id="r-orig" class="r-val">—</span></div>
+              <div class="r-metric"><span class="r-label">Tokens</span><span id="r-tok" class="r-val">—</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer>NERO v1.0 &bull; <a href="https://github.com/zspec-oos/logik2" target="_blank">GitHub</a></footer>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -4,28 +4,15 @@ services:
   nero-api:
     build: .
     ports:
-      - "8000:8000"
+      - "8000:8000"   # API + static dashboard both served on :8000
     volumes:
       - ./knowledge_base:/app/knowledge_base
+      - ./dashboard:/app/dashboard
     environment:
       - TEACHER_API_KEY=${TEACHER_API_KEY}
-      - SERVICE=api
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-  nero-dashboard:
-    build: .
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./knowledge_base:/app/knowledge_base
-    environment:
-      - SERVICE=dashboard
-    depends_on:
-      nero-api:
-        condition: service_healthy
-    restart: unless-stopped
