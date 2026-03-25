@@ -1,4 +1,4 @@
-# Cognita AI Model Configuration
+# NERO Model Configuration
 
 model:
   base_model: "microsoft/DialoGPT-medium"

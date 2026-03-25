@@ -1,5 +1,5 @@
 """
-Firebase Memory Sync - Cloud persistence for Cognita AI memory.
+Firebase Memory Sync - Cloud persistence for NERO memory.
 
 What lives where:
   LOCAL  (knowledge_base/) - model weights (.pt), embedding vectors (.npy)
@@ -16,15 +16,15 @@ from firebase_admin import credentials, firestore
 
 class FirebaseMemory:
     """
-    Syncs Cognita's memory metadata to Firestore.
+    Syncs NERO's memory metadata to Firestore.
     Binary brain data (weights, vectors) stays local — only
     lightweight structured memory goes to the cloud.
 
     Firestore collections:
-      cognita/{brain_id}/index          - knowledge index document
-      cognita/{brain_id}/checkpoints    - one doc per checkpoint
-      cognita/{brain_id}/sessions       - one doc per training session
-      cognita/{brain_id}/embeddings     - embedding metadata (not vectors)
+      nero/{brain_id}/index          - knowledge index document
+      nero/{brain_id}/checkpoints    - one doc per checkpoint
+      nero/{brain_id}/sessions       - one doc per training session
+      nero/{brain_id}/embeddings     - embedding metadata (not vectors)
     """
 
     def __init__(
@@ -51,7 +51,7 @@ class FirebaseMemory:
             firebase_admin.initialize_app(cred)
 
         self.db = firestore.client()
-        self._root = self.db.collection("cognita").document(brain_id)
+        self._root = self.db.collection("nero").document(brain_id)
 
     # ------------------------------------------------------------------
     # Internal helpers

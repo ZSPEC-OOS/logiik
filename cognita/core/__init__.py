@@ -1,1 +1,1 @@
-"""Cognita core modules"""
+"""NERO core modules"""

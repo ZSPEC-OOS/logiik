@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="cognita-ai",
+    name="nero-ai",
     version="1.0.0",
     description="AI training system with teacher-student architecture and local knowledge storage",
     long_description=open("README.md").read(),
@@ -27,7 +27,7 @@ setup(
     python_requires=">=3.9",
     entry_points={
         "console_scripts": [
-            "cognita-api=cognita.api.server:app",
+            "nero-api=cognita.api.server:app",
         ]
     },
 )

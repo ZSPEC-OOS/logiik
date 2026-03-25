@@ -1,1 +1,1 @@
-"""Cognita dashboard modules"""
+"""NERO dashboard modules"""

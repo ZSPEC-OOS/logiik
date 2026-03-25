@@ -1,1 +1,1 @@
-"""Cognita training modules"""
+"""NERO training modules"""
