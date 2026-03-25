@@ -1,5 +1,5 @@
 """
-Cognita Dashboard - Real-time training visualization interface.
+NERO Dashboard - Real-time training visualization interface.
 Beautiful, user-friendly monitoring of AI learning process.
 """
 import time
@@ -16,7 +16,7 @@ from plotly.subplots import make_subplots
 
 # Page configuration
 st.set_page_config(
-    page_title="Cognita AI - Training Dashboard",
+    page_title="NERO - Training Dashboard",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -83,7 +83,7 @@ if 'training_log' not in st.session_state:
 def render_header():
     """Render attractive header."""
     st.markdown(
-        '<h1 class="main-header">🧠 Cognita AI Training Dashboard</h1>',
+        '<h1 class="main-header">🧠 NERO Training Dashboard</h1>',
         unsafe_allow_html=True
     )
     cols = st.columns(4)
@@ -250,7 +250,7 @@ def render_knowledge_explorer():
             st.info("No knowledge base found. Start training to create one.")
 
         if st.button("📥 Export Knowledge Package", type="primary"):
-            st.success("Knowledge exported to cognita_knowledge_latest.zip")
+            st.success("Knowledge exported to nero_knowledge_latest.zip")
 
     with col2:
         st.markdown("**Recent Training Examples**")
@@ -366,7 +366,7 @@ def main():
     # Footer
     st.markdown("---")
     st.markdown(
-        "<p style='text-align:center; color:#666;'>Cognita AI v1.0 &bull; "
+        "<p style='text-align:center; color:#666;'>NERO v1.0 &bull; "
         "<a href='https://github.com/zspec-oos/logik2'>GitHub</a></p>",
         unsafe_allow_html=True
     )

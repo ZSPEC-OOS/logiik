@@ -197,7 +197,7 @@ class KnowledgeBaseManager:
 
     def export_knowledge_package(self, output_path: str, name: str) -> Path:
         """Export entire knowledge base as attachable package."""
-        output = Path(output_path) / f"cognita_knowledge_{name}.zip"
+        output = Path(output_path) / f"nero_knowledge_{name}.zip"
 
         shutil.make_archive(
             str(output).replace(".zip", ""),

@@ -1,4 +1,4 @@
 """
-Cognita AI - Teacher-Student AI Training Framework
+NERO - Teacher-Student AI Training Framework
 """
 __version__ = "1.0.0"

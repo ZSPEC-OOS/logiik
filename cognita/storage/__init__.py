@@ -1,1 +1,1 @@
-"""Cognita storage modules"""
+"""NERO storage modules"""

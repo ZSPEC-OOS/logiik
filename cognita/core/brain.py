@@ -1,5 +1,5 @@
 """
-Cognita Brain - Generative Neural Architecture with Local Knowledge Integration
+NERO Brain - Generative Neural Architecture with Local Knowledge Integration
 Implements a transformer-based student model that learns from teacher API
 and develops generative capabilities beyond mere memorization.
 """
@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 
-class CognitaBrain(nn.Module):
+class NEROBrain(nn.Module):
     """
     Core neural architecture combining:
     - Base transformer for language understanding

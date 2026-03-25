@@ -1,1 +1,1 @@
-"""Cognita API modules"""
+"""NERO API modules"""

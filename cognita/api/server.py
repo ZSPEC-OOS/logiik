@@ -1,5 +1,5 @@
 """
-FastAPI server for Cognita AI - Provides REST API and WebSocket
+FastAPI server for NERO - Provides REST API and WebSocket
 for real-time training updates.
 """
 import asyncio
@@ -11,13 +11,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from cognita.core.brain import CognitaBrain
+from cognita.core.brain import NEROBrain
 from cognita.core.teacher_interface import OpenAITeacher, AnthropicTeacher, TeacherOrchestrator
 from cognita.training.curriculum import GenerativeCurriculum
 from cognita.storage.checkpoint_manager import KnowledgeBaseManager
 from cognita.storage.firebase_memory import FirebaseMemory
 
-app = FastAPI(title="Cognita AI API", version="1.0.0")
+app = FastAPI(title="NERO API", version="1.0.0")
 
 # CORS for dashboard communication
 app.add_middleware(
@@ -29,7 +29,7 @@ app.add_middleware(
 )
 
 # Global state
-brain: Optional[CognitaBrain] = None
+brain: Optional[NEROBrain] = None
 teacher: Optional[TeacherOrchestrator] = None
 knowledge_manager: Optional[KnowledgeBaseManager] = None
 training_active = False
@@ -83,7 +83,7 @@ async def initialize_system(config: TrainingConfig):
         )
 
         # Initialize brain
-        brain = CognitaBrain()
+        brain = NEROBrain()
 
         # Initialize teacher
         if config.teacher_provider == "openai":

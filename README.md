@@ -1,4 +1,4 @@
-# 🧠 Cognita AI
+# 🧠 NERO
 
 A complete AI training framework implementing modern teacher-student architecture with local, attachable knowledge storage.
 
@@ -83,7 +83,7 @@ Teacher API (GPT-4 / Claude)
         │
         ▼ Q + 5-10 Answers
 ┌───────────────────────────────┐
-│         CognitaBrain          │
+│           NEROBrain            │
 │  ┌─────────────────────────┐  │
 │  │  Base Transformer (LM)  │  │
 │  │  + LoRA Adapters        │  │
@@ -138,5 +138,5 @@ manager = KnowledgeBaseManager("./knowledge_base")
 manager.export_knowledge_package("./exports", "my_model_v1")
 
 # Import on another machine
-manager.import_knowledge_package("./exports/cognita_knowledge_my_model_v1.zip")
+manager.import_knowledge_package("./exports/nero_knowledge_my_model_v1.zip")
 ```

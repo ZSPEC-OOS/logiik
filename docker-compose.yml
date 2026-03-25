@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  cognita-api:
+  nero-api:
     build: .
     ports:
       - "8000:8000"
@@ -17,7 +17,7 @@ services:
       timeout: 10s
       retries: 3
 
-  cognita-dashboard:
+  nero-dashboard:
     build: .
     ports:
       - "8501:8501"
@@ -26,6 +26,6 @@ services:
     environment:
       - SERVICE=dashboard
     depends_on:
-      cognita-api:
+      nero-api:
         condition: service_healthy
     restart: unless-stopped
