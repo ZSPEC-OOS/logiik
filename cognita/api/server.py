@@ -15,6 +15,7 @@ from cognita.core.brain import CognitaBrain
 from cognita.core.teacher_interface import OpenAITeacher, AnthropicTeacher, TeacherOrchestrator
 from cognita.training.curriculum import GenerativeCurriculum
 from cognita.storage.checkpoint_manager import KnowledgeBaseManager
+from cognita.storage.firebase_memory import FirebaseMemory
 
 app = FastAPI(title="Cognita AI API", version="1.0.0")
 
@@ -40,6 +41,9 @@ class TrainingConfig(BaseModel):
     topics: List[str]
     total_examples: int = 100
     knowledge_base_path: str = "./knowledge_base"
+    # Firebase — optional. Omit to run local-only.
+    firebase_credential_path: Optional[str] = None
+    brain_id: str = "default"
 
 
 class QuestionRequest(BaseModel):
@@ -64,8 +68,19 @@ async def initialize_system(config: TrainingConfig):
     global brain, teacher, knowledge_manager
 
     try:
-        # Initialize knowledge manager (attachable folder)
-        knowledge_manager = KnowledgeBaseManager(config.knowledge_base_path)
+        # Optional Firebase cloud memory
+        firebase = None
+        if config.firebase_credential_path:
+            firebase = FirebaseMemory(
+                brain_id=config.brain_id,
+                credential_path=config.firebase_credential_path,
+            )
+
+        # Initialize knowledge manager — local brain, optional cloud memory
+        knowledge_manager = KnowledgeBaseManager(
+            config.knowledge_base_path,
+            firebase=firebase,
+        )
 
         # Initialize brain
         brain = CognitaBrain()

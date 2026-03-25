@@ -1,6 +1,9 @@
 """
 Local Knowledge Storage - Manages attachable knowledge base folder
 with vector embeddings, model checkpoints, and training metadata.
+
+Brain weights stay local. Metadata is optionally synced to Firebase
+by passing a FirebaseMemory instance at construction time.
 """
 import json
 import shutil
@@ -10,6 +13,8 @@ from typing import Dict, List, Optional, Any
 import numpy as np
 import torch
 from datetime import datetime
+
+from cognita.storage.firebase_memory import FirebaseMemory
 
 
 class KnowledgeBaseManager:
@@ -21,8 +26,13 @@ class KnowledgeBaseManager:
     - metadata/: Indices and configuration
     """
 
-    def __init__(self, base_path: str = "./knowledge_base"):
+    def __init__(
+        self,
+        base_path: str = "./knowledge_base",
+        firebase: Optional[FirebaseMemory] = None,
+    ):
         self.base_path = Path(base_path)
+        self.firebase = firebase  # None = local-only mode
         self._ensure_structure()
 
     def _ensure_structure(self):
@@ -48,6 +58,8 @@ class KnowledgeBaseManager:
     def _save_index(self, index: Dict):
         with open(self.base_path / "metadata" / "knowledge_index.json", "w") as f:
             json.dump(index, f, indent=2)
+        if self.firebase:
+            self.firebase.sync_index(index)
 
     def save_checkpoint(
         self,
@@ -82,6 +94,9 @@ class KnowledgeBaseManager:
             "stats": training_stats
         })
         self._save_index(index)
+
+        if self.firebase:
+            self.firebase.push_checkpoint(name, training_stats)
 
         print(f"Checkpoint saved: {checkpoint_dir}")
         return checkpoint_dir
@@ -122,6 +137,9 @@ class KnowledgeBaseManager:
         })
         self._save_index(index)
 
+        if self.firebase:
+            self.firebase.push_embedding_meta(name, list(embeddings.shape), len(metadata))
+
         print(f"Embeddings saved: {embed_dir}")
 
     def load_embeddings(self, name: str) -> tuple:
@@ -153,6 +171,9 @@ class KnowledgeBaseManager:
             "timestamp": timestamp
         })
         self._save_index(index)
+
+        if self.firebase:
+            self.firebase.push_session(name, session_data)
 
     def get_attachable_knowledge_summary(self) -> Dict:
         """Get summary of all knowledge that can be attached/loaded."""
