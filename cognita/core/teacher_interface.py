@@ -1,5 +1,5 @@
 """
-Teacher AI Interface - Connects to external AI API to provide
+Teacher AI Interface - Connects to Kimi K2.5 as the teacher model to provide
 structured training data: questions + 5-10 possible answers
 """
 import json
@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 import openai
-import anthropic
 
 
 @dataclass
@@ -46,11 +45,16 @@ class TeacherInterface(ABC):
         pass
 
 
-class OpenAITeacher(TeacherInterface):
-    """OpenAI GPT-4 as teacher."""
+class KimiK2Teacher(TeacherInterface):
+    """Kimi K2.5 as teacher model (OpenAI-compatible API)."""
 
-    def __init__(self, api_key: str, model: str = "gpt-4"):
-        self.client = openai.OpenAI(api_key=api_key)
+    def __init__(
+        self,
+        api_key: str,           # Your Kimi API key
+        base_url: str,          # e.g. https://api.moonshot.cn/v1
+        model: str,             # e.g. kimi-k2-5
+    ):
+        self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
 
     def generate_training_example(
@@ -133,88 +137,8 @@ Return JSON with scores and brief feedback."""
         return json.loads(response.choices[0].message.content)
 
 
-class AnthropicTeacher(TeacherInterface):
-    """Claude as teacher."""
-
-    def __init__(self, api_key: str, model: str = "claude-opus-4-6"):
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = model
-
-    def generate_training_example(
-        self,
-        topic: str,
-        difficulty: float = 0.5,
-        num_answers: int = 5
-    ) -> TrainingExample:
-        """Generate structured training example with question + multiple answers."""
-        prompt = f"""Generate a training example for an AI student learning about: {topic}
-
-Difficulty level: {difficulty * 100:.0f}%
-
-Provide:
-1. A clear, specific question
-2. {num_answers} possible answers (mix of correct and plausible incorrect ones)
-3. Indicate which answers are correct (can be multiple)
-4. Provide explanation for learning
-
-Respond with valid JSON only:
-{{
-    "question": "...",
-    "answers": ["...", "...", ...],
-    "correct_indices": [0, 2],
-    "explanation": "...",
-    "domain": "..."
-}}"""
-
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        data = json.loads(response.content[0].text)
-
-        return TrainingExample(
-            question=data["question"],
-            answers=data["answers"],
-            correct_indices=data["correct_indices"],
-            difficulty=difficulty,
-            domain=data.get("domain", topic),
-            explanation=data["explanation"]
-        )
-
-    def evaluate_answer(
-        self,
-        question: str,
-        student_answer: str,
-        reference_answers: List[str]
-    ) -> Dict[str, float]:
-        """Evaluate student answer against references."""
-        prompt = f"""Evaluate this student answer:
-
-Question: {question}
-Reference Answers: {json.dumps(reference_answers)}
-Student Answer: {student_answer}
-
-Rate on scale 0-1 for:
-- accuracy (factual correctness)
-- completeness (covers key points)
-- originality (not just copying)
-- coherence (well structured)
-
-Respond with valid JSON only containing scores and brief feedback."""
-
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        return json.loads(response.content[0].text)
-
-
 class TeacherOrchestrator:
-    """Manages multiple teachers and curriculum progression."""
+    """Manages teacher and curriculum progression."""
 
     def __init__(self, primary_teacher: TeacherInterface):
         self.teachers = [primary_teacher]

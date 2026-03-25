@@ -1,9 +1,11 @@
-# Teacher AI API Configuration
+# Teacher AI API Configuration — Kimi K2.5
 
 teacher:
-  provider: "openai"  # openai, anthropic, custom
-  model: "gpt-4"
+  # --- Fill in your Kimi K2.5 credentials ---
+  model_id: ""       # e.g. kimi-k2-5
+  base_url: ""       # e.g. https://api.moonshot.cn/v1
   api_key_env: "TEACHER_API_KEY"
+  # ------------------------------------------
   generation:
     temperature: 0.7
     max_tokens: 500
