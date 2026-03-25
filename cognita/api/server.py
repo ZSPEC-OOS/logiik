@@ -9,6 +9,7 @@ from typing import List, Optional, Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from cognita.core.brain import NEROBrain
@@ -229,6 +230,12 @@ async def export_knowledge(output_path: str = ".", name: str = "latest"):
 
     output = knowledge_manager.export_knowledge_package(output_path, name)
     return {"status": "exported", "path": str(output)}
+
+
+# Serve static dashboard — must be mounted last so API routes take priority
+_dashboard_path = Path(__file__).parents[2] / "dashboard"
+if _dashboard_path.exists():
+    app.mount("/", StaticFiles(directory=str(_dashboard_path), html=True), name="dashboard")
 
 
 if __name__ == "__main__":
