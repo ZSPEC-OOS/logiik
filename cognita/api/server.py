@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from cognita.core.brain import NEROBrain
-from cognita.core.teacher_interface import OpenAITeacher, AnthropicTeacher, TeacherOrchestrator
+from cognita.core.teacher_interface import KimiK2Teacher, TeacherOrchestrator
 from cognita.training.curriculum import GenerativeCurriculum
 from cognita.storage.checkpoint_manager import KnowledgeBaseManager
 from cognita.storage.firebase_memory import FirebaseMemory
@@ -38,7 +38,8 @@ training_active = False
 
 class TrainingConfig(BaseModel):
     teacher_api_key: str
-    teacher_provider: str = "openai"
+    teacher_base_url: str           # e.g. https://api.moonshot.cn/v1
+    teacher_model: str              # e.g. kimi-k2-5
     topics: List[str]
     total_examples: int = 100
     knowledge_base_path: str = "./knowledge_base"
@@ -86,14 +87,12 @@ async def initialize_system(config: TrainingConfig):
         # Initialize brain
         brain = NEROBrain()
 
-        # Initialize teacher
-        if config.teacher_provider == "openai":
-            teacher_interface = OpenAITeacher(config.teacher_api_key)
-        elif config.teacher_provider == "anthropic":
-            teacher_interface = AnthropicTeacher(config.teacher_api_key)
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported teacher provider")
-
+        # Initialize Kimi K2.5 teacher
+        teacher_interface = KimiK2Teacher(
+            api_key=config.teacher_api_key,
+            base_url=config.teacher_base_url,
+            model=config.teacher_model,
+        )
         teacher = TeacherOrchestrator(teacher_interface)
 
         # Load existing knowledge if available
