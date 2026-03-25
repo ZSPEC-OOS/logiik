@@ -1,118 +1,142 @@
-# 🤖 SPAWN - Synthetic Programming Agent with Operational Network
+# 🧠 Cognita AI
 
-> *"An AI coding assistant that doesn't just write code—it understands, learns, and evolves."*
+A complete AI training framework implementing modern teacher-student architecture with local, attachable knowledge storage.
 
-SPAWN is an advanced AI coding assistant built to surpass traditional code generation tools. It combines deep code understanding, intelligent planning, memory systems, and self-improvement capabilities to deliver exceptional software engineering assistance.
+## 🎯 Key Features
 
-## 🚀 Core Capabilities
+- **Teacher-Student Architecture**: Connect to GPT-4/Claude APIs as teachers
+- **Structured Training**: Question + 5-10 answers curriculum format
+- **Generative Capabilities**: AI generates original answers, not just memorization
+- **Local Knowledge Base**: All learning stored in attachable `knowledge_base/` folder
+- **Real-time Dashboard**: Beautiful Streamlit interface for monitoring training
+- **REST API + WebSocket**: FastAPI server for training control and live updates
 
-| Feature | Description |
-|---------|-------------|
-| **Deep Code Intelligence** | AST parsing, semantic analysis, dependency mapping |
-| **Multi-Step Planning** | Hierarchical task decomposition with execution strategies |
-| **Persistent Memory** | Short-term context + long-term learning from interactions |
-| **Advanced Tool System** | 20+ specialized tools for comprehensive codebase interaction |
-| **Self-Improvement** | Learns from code patterns, user preferences, and outcomes |
-| **Safety & Validation** | Automatic code validation, rollback capabilities, guardrails |
-| **Workflow Orchestration** | Complex task pipelines with dependency management |
+## 🚀 Quick Start
+
+```bash
+# Install
+pip install -e .
+
+# Copy and configure environment
+cp .env.example .env
+# Edit .env and set your TEACHER_API_KEY
+
+# Start API server
+python -m cognita.api.server
+
+# Launch dashboard (new terminal)
+streamlit run cognita/dashboard/app.py
+```
+
+## 🐳 Docker
+
+```bash
+# Set your API key
+export TEACHER_API_KEY="your-api-key"
+
+# Start all services
+docker-compose up
+
+# API available at: http://localhost:8000
+# Dashboard at:     http://localhost:8501
+```
+
+## 📁 Repository Structure
+
+```
+cognita/
+├── core/
+│   ├── brain.py              # Transformer + LoRA + Generative head
+│   └── teacher_interface.py  # OpenAI & Anthropic teacher connectors
+├── training/
+│   └── curriculum.py         # 3-phase curriculum engine
+├── storage/
+│   └── checkpoint_manager.py # Local knowledge base manager
+├── dashboard/
+│   └── app.py                # Streamlit real-time dashboard
+└── api/
+    └── server.py             # FastAPI + WebSocket server
+
+configs/
+├── model_config.yaml         # Model & training hyperparameters
+└── teacher_config.yaml       # Teacher API configuration
+
+knowledge_base/               # Attachable AI knowledge folder
+├── embeddings/               # Vector representations for RAG
+├── checkpoints/              # Model snapshots
+├── training_data/            # Training session history
+└── metadata/                 # Indices & configuration
+```
+
+## 🎓 Training Phases
+
+| Phase | Name | Description | Generative Ratio |
+|-------|------|-------------|-----------------|
+| 1 | **Memorization** | Learn from teacher's Q+A structure | 10% |
+| 2 | **Generation** | Create original answers | 50% |
+| 3 | **Abstraction** | Cross-domain knowledge synthesis | 80% |
 
 ## 🏗️ Architecture
 
 ```
-SPAWN/
-├── core/              # Core agent framework
-│   ├── agent.ts       # Main agent orchestration
-│   ├── reasoning.ts   # Advanced reasoning engine
-│   └── planner.ts     # Hierarchical task planner
-├── tools/             # Tool system
-│   ├── registry.ts    # Tool registration and discovery
-│   ├── executor.ts    # Tool execution engine
-│   └── enhanced/      # Advanced tool implementations
-├── memory/            # Memory and context
-│   ├── short-term.ts  # Working memory
-│   ├── long-term.ts   # Persistent knowledge
-│   └── context.ts     # Context window management
-├── intelligence/      # Code intelligence
-│   ├── parser.ts      # Multi-language AST parsing
-│   ├── analyzer.ts    # Semantic code analysis
-│   └── patterns.ts    # Pattern recognition
-├── workflow/          # Workflow system
-│   ├── orchestrator.ts # Task orchestration
-│   ├── pipeline.ts    # Execution pipelines
-│   └── dependencies.ts # Dependency resolution
-├── safety/            # Safety and validation
-│   ├── validator.ts   # Code validation
-│   ├── guardrails.ts  # Safety boundaries
-│   └── rollback.ts    # Change management
-└── utils/             # Utilities
+Teacher API (GPT-4 / Claude)
+        │
+        ▼ Q + 5-10 Answers
+┌───────────────────────────────┐
+│         CognitaBrain          │
+│  ┌─────────────────────────┐  │
+│  │  Base Transformer (LM)  │  │
+│  │  + LoRA Adapters        │  │
+│  └───────────┬─────────────┘  │
+│              │ hidden states   │
+│  ┌───────────▼─────────────┐  │
+│  │    Generative Head      │  │
+│  │ (original answer synth) │  │
+│  └─────────────────────────┘  │
+└───────────────────────────────┘
+        │
+        ▼
+knowledge_base/ (attachable)
 ```
 
-## 🎯 Quick Start
+## 📡 API Reference
 
-```bash
-# Install dependencies
-npm install
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/initialize` | POST | Initialize brain + teacher |
+| `/train/start` | POST | Begin training |
+| `/train/stop` | POST | Stop training |
+| `/ask` | POST | Query the trained AI |
+| `/knowledge/summary` | GET | Knowledge base stats |
+| `/knowledge/export` | POST | Export knowledge package |
+| `/ws/training` | WebSocket | Live training metrics |
 
-# Initialize SPAWN
-npm run spawn:init
+## 🔧 Configuration
 
-# Start the agent
-npm run spawn:start
+Edit `configs/model_config.yaml` to customize:
+- Base model (default: `microsoft/DialoGPT-medium`)
+- LoRA rank and alpha
+- Training batch size and learning rate
+- Curriculum phase durations
+
+Edit `configs/teacher_config.yaml` to configure:
+- Teacher provider (`openai` or `anthropic`)
+- Examples per topic and difficulty range
+- Evaluation criteria
+
+## 📦 Knowledge Portability
+
+The `knowledge_base/` folder is fully portable. To transfer a trained model:
+
+```python
+from cognita.storage.checkpoint_manager import KnowledgeBaseManager
+
+manager = KnowledgeBaseManager("./knowledge_base")
+
+# Export
+manager.export_knowledge_package("./exports", "my_model_v1")
+
+# Import on another machine
+manager.import_knowledge_package("./exports/cognita_knowledge_my_model_v1.zip")
 ```
-
-## 🧠 Advanced Features
-
-### 1. Semantic Code Understanding
-SPAWN doesn't just see text—it understands code structure, semantics, and intent:
-- Multi-language AST parsing
-- Dependency graph analysis
-- Type inference and validation
-- Code smell detection
-
-### 2. Adaptive Planning
-Dynamic task planning that adapts to discovered complexity:
-- Hierarchical task decomposition
-- Plan revision based on new information
-- Parallel execution where safe
-- Recovery strategies for failures
-
-### 3. Knowledge Accumulation
-Continuous learning from every interaction:
-- Code pattern recognition
-- User preference learning
-- Project-specific conventions
-- Error pattern analysis
-
-### 4. Intelligent Tool Selection
-Context-aware tool selection and composition:
-- Automatic tool chain construction
-- Parameter inference
-- Result caching and reuse
-- Fallback strategies
-
-## 🛡️ Safety Features
-
-- **Automatic Code Validation**: Linting, type checking, test execution
-- **Change Rollback**: Atomic operations with full rollback capability
-- **Guardrails**: Configurable safety boundaries
-- **Audit Trail**: Complete history of all actions
-
-## 📊 Performance Metrics
-
-SPAWN tracks and optimizes:
-- Code quality scores
-- Execution efficiency
-- Planning accuracy
-- Learning convergence
-
-## 🔮 Roadmap
-
-- [ ] Multi-agent collaboration
-- [ ] Natural language code search
-- [ ] Automated refactoring suggestions
-- [ ] Integration with CI/CD pipelines
-- [ ] Custom tool creation
-
----
-
-*Built with ❤️ by the SPAWN team*
