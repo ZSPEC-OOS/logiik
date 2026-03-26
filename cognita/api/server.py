@@ -49,6 +49,7 @@ _repeat_threshold: int = 75
 _final_report: Optional[Dict] = None
 _nlp_phase_topics: Dict[str, List[str]] = {}
 _topics_per_session: int = 5
+_training_error: Optional[str] = None
 
 # Load NLP curriculum from teacher_config.yaml on startup
 _TEACHER_CONFIG_PATH = Path(__file__).parents[2] / "configs" / "teacher_config.yaml"
@@ -221,7 +222,8 @@ def _run_validation(dataset, batch_size: int) -> Dict:
 
 async def training_loop():
     """Background training loop — real forward/backward/optimizer steps."""
-    global training_active, training_complete, _final_report
+    global training_active, training_complete, _final_report, _training_error
+    _training_error = None
 
     BATCH_SIZE = 8
     GRAD_ACCUM_STEPS = 4
@@ -255,7 +257,8 @@ async def training_loop():
     plateau_count = 0
     current_dataset = None
 
-    while training_active:
+    try:
+        while training_active:
         # Check repeat threshold before generating new batch
         if question_bank and question_bank.toss_count >= _repeat_threshold:
             training_active = False
@@ -348,8 +351,13 @@ async def training_loop():
 
             await asyncio.sleep(0)  # Yield control to event loop
 
-    brain.eval()
-    training_active = False
+    except Exception as e:
+        import traceback
+        _training_error = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        print(f"[NERO] Training error:\n{_training_error}")
+    finally:
+        brain.eval()
+        training_active = False
 
 
 @app.websocket("/ws/training")
@@ -371,6 +379,7 @@ async def training_websocket(websocket: WebSocket):
                     "toss_count":         question_bank.toss_count if question_bank else 0,
                     "repeat_threshold":   _repeat_threshold,
                     "training_complete":  training_complete,
+                    "training_error":     _training_error,
                     "timestamp":          asyncio.get_event_loop().time(),
                 }
                 await websocket.send_json(metrics)
