@@ -51,6 +51,7 @@ _nlp_phase_topics: Dict[str, List[str]] = {}
 _topics_per_session: int = 5
 _training_error: Optional[str] = None
 _training_status: str = ""
+_current_topics: List[str] = []
 
 # Load NLP curriculum from teacher_config.yaml on startup
 _TEACHER_CONFIG_PATH = Path(__file__).parents[2] / "configs" / "teacher_config.yaml"
@@ -223,15 +224,16 @@ def _run_validation(dataset, batch_size: int) -> Dict:
 
 async def training_loop():
     """Background training loop — real forward/backward/optimizer steps."""
-    global training_active, training_complete, _final_report, _training_error, _training_status
+    global training_active, training_complete, _final_report, _training_error, _training_status, _current_topics
     _training_error = None
     _training_status = ""
+    _current_topics = []
 
     BATCH_SIZE = 8
     GRAD_ACCUM_STEPS = 4
     LR = 2e-4
     WARMUP_STEPS = 100
-    VAL_EVERY_STEPS = 50          # Run validation every N optimizer steps
+    VAL_EVERY_STEPS = 5           # Run validation every N optimizer steps
     PLATEAU_PATIENCE = 3          # Advance phase after N val checks with no improvement
     PLATEAU_MIN_DELTA = 0.01      # Minimum improvement to reset patience counter
 
@@ -268,13 +270,15 @@ async def training_loop():
                 _final_report = question_bank.generate_report(_topics_description)
                 break
 
-            _training_status = "Asking teacher for training examples…"
+            phase_name = curriculum.phase_names[curriculum.current_phase]
+            _training_status = f"Asking teacher for {phase_name} examples…"
             loop = asyncio.get_event_loop()
             current_dataset = await loop.run_in_executor(
                 None,
                 lambda: curriculum.generate_phase_batch(batch_size=5, question_bank=question_bank)
             )
-            _training_status = "Training on batch…"
+            _current_topics = curriculum._get_topics()
+            _training_status = f"Training — {phase_name} · topics: {', '.join(_current_topics[:2])}{'…' if len(_current_topics) > 2 else ''}"
             loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_examples)
 
             for batch in loader:
@@ -388,6 +392,7 @@ async def training_websocket(websocket: WebSocket):
                     "training_complete":  training_complete,
                     "training_error":     _training_error,
                     "training_status":    _training_status,
+                    "current_topics":     _current_topics,
                     "timestamp":          asyncio.get_event_loop().time(),
                 }
                 await websocket.send_json(metrics)

@@ -327,6 +327,16 @@ function connectWS() {
       addLog('system', m.training_status);
     }
 
+    // Current topic banner
+    const topicEl = document.getElementById('topic-text');
+    if (topicEl) {
+      if (m.current_topics && m.current_topics.length) {
+        topicEl.textContent = m.current_topics.join(' · ');
+      } else if (m.training_status) {
+        topicEl.textContent = m.training_status;
+      }
+    }
+
     // Training error
     if (m.training_error && m.training_error !== state.lastTrainingError) {
       state.lastTrainingError = m.training_error;
