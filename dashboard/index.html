@@ -34,6 +34,11 @@
       </section>
 
       <section class="sidebar-section">
+        <h3>Appearance</h3>
+        <button class="btn btn-theme" id="btn-theme" onclick="toggleThemePanel()">◐ Themes</button>
+      </section>
+
+      <section class="sidebar-section">
         <h3>Help</h3>
         <button class="btn btn-help" onclick="showTab('help', document.querySelector('[data-tab=help]'))">
           ? How to use NERO
@@ -42,6 +47,119 @@
 
       <div id="status-badge" class="status-badge idle">● Idle</div>
     </aside>
+
+    <!-- ── Theme panel ─────────────────────────────────────── -->
+    <div id="theme-panel" class="theme-panel" role="dialog" aria-label="Theme settings">
+
+      <div class="theme-panel-header">
+        <span>Appearance</span>
+        <button class="theme-panel-close" onclick="toggleThemePanel()" aria-label="Close">✕</button>
+      </div>
+
+      <div class="theme-panel-section">
+        <h4>Theme</h4>
+        <div class="swatches">
+
+          <button class="swatch active" data-t="polar" onclick="setTheme('polar')">
+            <div class="swatch-dots">
+              <span style="background:#667eea"></span>
+              <span style="background:#f4f5f9"></span>
+              <span style="background:#ffffff"></span>
+            </div>
+            <div class="swatch-name">Polar</div>
+            <div class="swatch-sub">Light</div>
+          </button>
+
+          <button class="swatch" data-t="obsidian" onclick="setTheme('obsidian')">
+            <div class="swatch-dots">
+              <span style="background:#818cf8"></span>
+              <span style="background:#0f0f13"></span>
+              <span style="background:#1a1a22"></span>
+            </div>
+            <div class="swatch-name">Obsidian</div>
+            <div class="swatch-sub">Dark neutral</div>
+          </button>
+
+          <button class="swatch" data-t="midnight" onclick="setTheme('midnight')">
+            <div class="swatch-dots">
+              <span style="background:#60a5fa"></span>
+              <span style="background:#0c1525"></span>
+              <span style="background:#132035"></span>
+            </div>
+            <div class="swatch-name">Midnight</div>
+            <div class="swatch-sub">Deep navy</div>
+          </button>
+
+          <button class="swatch" data-t="forest" onclick="setTheme('forest')">
+            <div class="swatch-dots">
+              <span style="background:#34d399"></span>
+              <span style="background:#0a1a10"></span>
+              <span style="background:#112518"></span>
+            </div>
+            <div class="swatch-name">Forest</div>
+            <div class="swatch-sub">Dark emerald</div>
+          </button>
+
+          <button class="swatch" data-t="amber" onclick="setTheme('amber')">
+            <div class="swatch-dots">
+              <span style="background:#fbbf24"></span>
+              <span style="background:#17110a"></span>
+              <span style="background:#231908"></span>
+            </div>
+            <div class="swatch-name">Amber</div>
+            <div class="swatch-sub">Warm gold</div>
+          </button>
+
+          <button class="swatch" data-t="rose" onclick="setTheme('rose')">
+            <div class="swatch-dots">
+              <span style="background:#f472b6"></span>
+              <span style="background:#18080f"></span>
+              <span style="background:#24101c"></span>
+            </div>
+            <div class="swatch-name">Rose</div>
+            <div class="swatch-sub">Dark pink</div>
+          </button>
+
+        </div>
+      </div>
+
+      <div class="theme-panel-section">
+        <h4>Adjustments</h4>
+        <div class="filter-slider-group">
+
+          <div class="filter-slider-row">
+            <div class="filter-slider-label">
+              Brightness <span id="lbl-brightness">100%</span>
+            </div>
+            <input class="filter-slider" type="range" id="sl-brightness"
+                   min="50" max="150" value="100" step="1"
+                   oninput="applyFilter('brightness', this.value)">
+          </div>
+
+          <div class="filter-slider-row">
+            <div class="filter-slider-label">
+              Contrast <span id="lbl-contrast">100%</span>
+            </div>
+            <input class="filter-slider" type="range" id="sl-contrast"
+                   min="50" max="150" value="100" step="1"
+                   oninput="applyFilter('contrast', this.value)">
+          </div>
+
+          <div class="filter-slider-row">
+            <div class="filter-slider-label">
+              Exposure <span id="lbl-exposure">100%</span>
+            </div>
+            <input class="filter-slider" type="range" id="sl-exposure"
+                   min="0" max="200" value="100" step="1"
+                   oninput="applyFilter('exposure', this.value)">
+          </div>
+
+        </div>
+      </div>
+
+      <button class="theme-reset" onclick="resetFilters()">↺ Reset adjustments</button>
+
+    </div><!-- /theme-panel -->
 
     <!-- ── Main ───────────────────────────────────────────── -->
     <main class="main">

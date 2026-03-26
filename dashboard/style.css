@@ -15,6 +15,71 @@
   --muted:     #6c757d;
   --sidebar-w: 230px;
   --radius:    .75rem;
+  /* filter controls — adjusted by sliders */
+  --f-brightness: 1;
+  --f-contrast:   1;
+  --f-exposure:   1;
+}
+
+/* ─── 6 Premade themes ───────────────────────────────────────── */
+/* 1. Polar — default light */
+[data-theme="polar"] {
+  --accent: #667eea; --accent2: #764ba2;
+  --bg: #f4f5f9; --surface: #ffffff; --border: #e4e6ef;
+  --text: #1a1a2e; --muted: #6c757d;
+}
+
+/* 2. Obsidian — dark neutral */
+[data-theme="obsidian"] {
+  --accent: #818cf8; --accent2: #a78bfa;
+  --bg: #0f0f13; --surface: #1a1a22; --border: #2c2c38;
+  --text: #e2e2f0; --muted: #8888aa;
+}
+
+/* 3. Midnight — deep navy */
+[data-theme="midnight"] {
+  --accent: #60a5fa; --accent2: #818cf8;
+  --bg: #0c1525; --surface: #132035; --border: #1e3050;
+  --text: #cbd5e1; --muted: #5a7896;
+}
+
+/* 4. Forest — dark emerald */
+[data-theme="forest"] {
+  --accent: #34d399; --accent2: #10b981;
+  --bg: #0a1a10; --surface: #112518; --border: #1a3d26;
+  --text: #d1fae5; --muted: #5a8f6e;
+}
+
+/* 5. Amber — warm dark gold */
+[data-theme="amber"] {
+  --accent: #fbbf24; --accent2: #f59e0b;
+  --bg: #17110a; --surface: #231908; --border: #3d2e10;
+  --text: #fef3c7; --muted: #9a7040;
+}
+
+/* 6. Rose — dark pink */
+[data-theme="rose"] {
+  --accent: #f472b6; --accent2: #e879f9;
+  --bg: #18080f; --surface: #24101c; --border: #3d1530;
+  --text: #fce7f3; --muted: #9d5a7a;
+}
+
+/* ─── Global page filter (brightness / contrast / exposure) ───── */
+html {
+  filter:
+    brightness(var(--f-brightness))
+    contrast(var(--f-contrast))
+    saturate(var(--f-exposure));
+}
+
+/* Smooth colour transitions when switching themes */
+body,
+.card, .sidebar, .btn, .tab, input, textarea, select,
+.metric-card, .phase, .log-panel, .help-section {
+  transition:
+    background-color .25s ease,
+    border-color .25s ease,
+    color .2s ease;
 }
 
 body {
@@ -732,6 +797,168 @@ textarea:focus { outline: none; border-color: var(--accent); background: #fff; }
   color: var(--muted);
   line-height: 1.65;
 }
+
+/* ─── Theme panel ────────────────────────────────────────────── */
+.theme-panel {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-w);
+  width: 260px;
+  height: 100vh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 24px rgba(0,0,0,.18);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-110%);
+  transition: transform .25s cubic-bezier(.4,0,.2,1);
+  overflow-y: auto;
+}
+.theme-panel.open { transform: translateX(0); }
+
+.theme-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.1rem .75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .88rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.theme-panel-close {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: var(--muted);
+  cursor: pointer;
+  padding: .2rem .4rem;
+  border-radius: .3rem;
+  line-height: 1;
+}
+.theme-panel-close:hover { background: var(--bg); color: var(--text); }
+
+.theme-panel-section {
+  padding: .9rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+.theme-panel-section h4 {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin-bottom: .75rem;
+}
+
+/* Swatch grid */
+.swatches {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .6rem;
+}
+.swatch {
+  border: 2px solid var(--border);
+  border-radius: .55rem;
+  padding: .6rem .7rem .5rem;
+  cursor: pointer;
+  background: var(--bg);
+  transition: border-color .15s, transform .1s;
+  text-align: left;
+}
+.swatch:hover   { border-color: var(--accent); transform: translateY(-1px); }
+.swatch.active  { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(102,126,234,.2); }
+
+.swatch-dots {
+  display: flex;
+  gap: 4px;
+  margin-bottom: .35rem;
+}
+.swatch-dots span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: block;
+  flex-shrink: 0;
+}
+.swatch-name {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+}
+.swatch-sub {
+  font-size: .65rem;
+  color: var(--muted);
+  margin-top: .1rem;
+}
+
+/* Filter sliders */
+.filter-slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+}
+.filter-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+.filter-slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: .8rem;
+  font-weight: 600;
+}
+.filter-slider-label span {
+  font-size: .72rem;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.filter-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+.filter-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: pointer;
+  transition: transform .1s;
+}
+.filter-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+.filter-slider::-moz-range-thumb {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  cursor: pointer;
+}
+
+.theme-reset {
+  margin: .75rem 1.1rem 1rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: .45rem;
+  color: var(--muted);
+  font-size: .8rem;
+  padding: .4rem .75rem;
+  cursor: pointer;
+  width: calc(100% - 2.2rem);
+  transition: background .15s, color .15s;
+}
+.theme-reset:hover { background: var(--bg); color: var(--text); }
 
 /* ─── Footer ─────────────────────────────────────────────────── */
 footer {

@@ -577,8 +577,60 @@ async function askAI() {
   }
 }
 
+/* ─── Themes ─────────────────────────────────────────────────── */
+function toggleThemePanel() {
+  document.getElementById('theme-panel').classList.toggle('open');
+}
+
+function setTheme(name) {
+  document.documentElement.setAttribute('data-theme', name);
+  localStorage.setItem('nero-theme', name);
+  document.querySelectorAll('.swatch').forEach(s => {
+    s.classList.toggle('active', s.dataset.t === name);
+  });
+}
+
+function applyFilter(type, value) {
+  const num = parseFloat(value) / 100;
+  const varName = type === 'brightness' ? '--f-brightness'
+                : type === 'contrast'   ? '--f-contrast'
+                :                         '--f-exposure';
+  document.documentElement.style.setProperty(varName, num);
+  const label = document.getElementById(`lbl-${type}`);
+  if (label) label.textContent = `${value}%`;
+  localStorage.setItem(`nero-filter-${type}`, value);
+}
+
+function resetFilters() {
+  ['brightness', 'contrast', 'exposure'].forEach(type => {
+    const slider = document.getElementById(`sl-${type}`);
+    if (slider) { slider.value = 100; }
+    const varName = type === 'brightness' ? '--f-brightness'
+                  : type === 'contrast'   ? '--f-contrast'
+                  :                         '--f-exposure';
+    document.documentElement.style.removeProperty(varName);
+    const label = document.getElementById(`lbl-${type}`);
+    if (label) label.textContent = '100%';
+    localStorage.removeItem(`nero-filter-${type}`);
+  });
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('nero-theme') || 'midnight';
+  setTheme(saved);
+  ['brightness', 'contrast', 'exposure'].forEach(type => {
+    const stored = localStorage.getItem(`nero-filter-${type}`);
+    if (stored !== null) {
+      const slider = document.getElementById(`sl-${type}`);
+      if (slider) { slider.value = stored; }
+      applyFilter(type, stored);
+    }
+  });
+}
+
 /* ─── Boot ───────────────────────────────────────────────────── */
 (async function init() {
+  initTheme();
   renderPhases();
   await refreshMetrics();
   connectWS();
