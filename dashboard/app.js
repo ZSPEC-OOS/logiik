@@ -4,15 +4,16 @@ const WS  = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}
 
 /* ─── State ──────────────────────────────────────────────────── */
 const state = {
-  initialized: false,
-  training:    false,
-  phase:       null,        // current phase name from WS
-  steps:       [],
-  trainLoss:   [],
-  valLoss:     [],
-  valPpl:      [],
-  valSteps:    [],          // steps at which val metrics arrived
-  logEntries:  [],
+  initialized:     false,
+  training:        false,
+  trainingComplete: false,
+  phase:           null,
+  steps:           [],
+  trainLoss:       [],
+  valLoss:         [],
+  valPpl:          [],
+  valSteps:        [],
+  logEntries:      [],
 };
 
 /* ─── Phase definitions ──────────────────────────────────────── */
@@ -30,6 +31,7 @@ function showTab(id, btn) {
   btn.classList.add('active');
   if (id === 'monitor')   { renderPhases(); renderCharts(); }
   if (id === 'knowledge') loadKBFolders();
+  if (id === 'logs')      loadLogs();
 }
 
 /* ─── Status badge ───────────────────────────────────────────── */
@@ -64,20 +66,10 @@ async function initializeSystem() {
 
   const msg = document.getElementById('init-msg');
 
-  if (!apiKey || !baseUrl || !model || !topicsRaw) {
+  const threshold = parseInt(document.getElementById('f-threshold').value, 10);
+
+  if (!apiKey || !baseUrl || !model || !topicsRaw.trim()) {
     msg.textContent = 'API Key, Base URL, Model ID, and Topics are required.';
-    msg.className   = 'init-msg error';
-    return;
-  }
-
-  // Parse topics — split on newlines and/or commas, trim blanks
-  const topics = topicsRaw
-    .split(/[\n,]+/)
-    .map(t => t.trim())
-    .filter(Boolean);
-
-  if (topics.length === 0) {
-    msg.textContent = 'Enter at least one topic.';
     msg.className   = 'init-msg error';
     return;
   }
@@ -86,13 +78,14 @@ async function initializeSystem() {
   msg.className   = 'init-msg pending';
 
   const payload = {
-    teacher_api_key:  apiKey,
-    teacher_base_url: baseUrl,
-    teacher_model:    model,
-    topics,
-    total_examples:   isNaN(totalEx) ? 100 : totalEx,
-    knowledge_base_path: kbPath || './knowledge_base',
-    brain_id:         brainId || 'default',
+    teacher_api_key:          apiKey,
+    teacher_base_url:         baseUrl,
+    teacher_model:            model,
+    topics_description:       topicsRaw.trim(),
+    question_repeat_threshold: isNaN(threshold) ? 75 : threshold,
+    total_examples:           isNaN(totalEx) ? 100 : totalEx,
+    knowledge_base_path:      kbPath || './knowledge_base',
+    brain_id:                 brainId || 'default',
   };
   if (firebase) payload.firebase_credential_path = firebase;
 
@@ -303,11 +296,31 @@ function connectWS() {
     }
 
     // Metric cards
-    if (m.step   != null) setMetric('m-step',  m.step);
-    if (m.loss   != null) setMetric('m-loss',  fmt(m.loss, 4));
-    if (m.val_loss        != null) {
+    if (m.step      != null) setMetric('m-step',  m.step);
+    if (m.loss      != null) setMetric('m-loss',  fmt(m.loss, 4));
+    if (m.val_loss  != null) {
       setMetric('m-vloss', fmt(m.val_loss, 4));
       setMetric('m-ppl',   fmt(m.val_perplexity, 1));
+    }
+    if (m.bank_count != null) {
+      setMetric('m-bank', m.bank_count);
+      setMetric('m-toss', m.toss_count);
+      const pct = m.repeat_threshold > 0
+        ? Math.min(100, (m.toss_count / m.repeat_threshold) * 100).toFixed(1)
+        : 0;
+      setMetric('m-toss-d', `${pct}% of threshold (${m.repeat_threshold})`);
+      // Update Logs summary bar
+      _updateLogsSummary(m.bank_count, m.toss_count, m.repeat_threshold, m.training_complete);
+    }
+
+    // Training complete
+    if (m.training_complete && !state.trainingComplete) {
+      state.trainingComplete = true;
+      state.training = false;
+      setStatus('Complete', 'complete');
+      document.getElementById('complete-banner').style.display = 'flex';
+      addLog('phase', 'Training complete — repeat threshold reached');
+      loadReport();
     }
 
     // Extend charts if monitor tab visible
@@ -403,6 +416,129 @@ async function loadKBFolders() {
     document.getElementById('kb-folders').innerHTML =
       '<p class="muted">Knowledge manager not initialized.</p>';
   }
+}
+
+/* ─── Logs tab ───────────────────────────────────────────────── */
+
+function _ts(epoch) {
+  if (!epoch) return '—';
+  return new Date(epoch * 1000).toLocaleTimeString();
+}
+
+function _truncate(text, max = 80) {
+  return text && text.length > max ? text.slice(0, max) + '…' : (text || '—');
+}
+
+function _updateLogsSummary(bankCount, tossCount, threshold, complete) {
+  const el = id => document.getElementById(id);
+  if (el('ls-bank'))      el('ls-bank').textContent      = bankCount ?? '—';
+  if (el('ls-toss'))      el('ls-toss').textContent      = tossCount ?? '—';
+  if (el('ls-threshold')) el('ls-threshold').textContent = threshold ?? '—';
+  if (el('ls-status'))    el('ls-status').textContent    = complete ? 'Complete' : (state.training ? 'Training' : 'Paused');
+
+  if (threshold > 0 && tossCount != null) {
+    const pct  = Math.min(100, (tossCount / threshold) * 100);
+    const fill = document.getElementById('toss-fill');
+    const lbl  = document.getElementById('toss-pct');
+    if (fill) {
+      fill.style.width = pct + '%';
+      fill.className   = 'toss-fill' + (pct >= 100 ? ' toss-fill-done' : pct >= 75 ? ' toss-fill-warn' : '');
+    }
+    if (lbl) lbl.textContent = `${tossCount} / ${threshold} (${pct.toFixed(1)}%)`;
+  }
+}
+
+async function loadLogs() {
+  try {
+    const [bankRes, tossRes] = await Promise.all([
+      fetch(`${API}/logs/question-bank`),
+      fetch(`${API}/logs/toss-log`),
+    ]);
+
+    if (!bankRes.ok || !tossRes.ok) {
+      addLog('error', 'Could not load logs — system may not be initialized.');
+      return;
+    }
+
+    const bank = await bankRes.json();
+    const toss = await tossRes.json();
+
+    _updateLogsSummary(bank.count, toss.count, toss.threshold, state.trainingComplete);
+
+    document.getElementById('bank-count-lbl').textContent = bank.count;
+    document.getElementById('toss-count-lbl').textContent = toss.count;
+
+    // Question Bank table — most recent first, cap 500
+    const bankRows = [...bank.entries].reverse().slice(0, 500);
+    document.getElementById('bank-tbody').innerHTML = bankRows.length
+      ? bankRows.map(e => `
+          <tr>
+            <td><code>${e.id}</code></td>
+            <td title="${e.question}">${_truncate(e.question)}</td>
+            <td>${_ts(e.timestamp)}</td>
+          </tr>`).join('')
+      : '<tr><td colspan="3" class="muted" style="text-align:center;padding:.75rem;">Empty</td></tr>';
+
+    // Toss Log table — most recent first, cap 500
+    const tossRows = [...toss.entries].reverse().slice(0, 500);
+    document.getElementById('toss-tbody').innerHTML = tossRows.length
+      ? tossRows.map(e => `
+          <tr>
+            <td title="${e.question}">${_truncate(e.question)}</td>
+            <td><code>${e.matched_id}</code></td>
+            <td>${_ts(e.timestamp)}</td>
+          </tr>`).join('')
+      : '<tr><td colspan="3" class="muted" style="text-align:center;padding:.75rem;">Empty</td></tr>';
+
+  } catch (_) {
+    addLog('error', 'Failed to fetch logs.');
+  }
+}
+
+async function loadReport() {
+  try {
+    const res  = await fetch(`${API}/logs/report`);
+    const data = await res.json();
+    if (!res.ok || data.status === 'in_progress') return;
+
+    const card = document.getElementById('final-report-card');
+    const body = document.getElementById('final-report-body');
+    if (!card || !body) return;
+
+    const topicsHtml = data.topics_covered
+      ? Object.entries(data.topics_covered)
+          .map(([t, n]) => `
+            <div class="report-topic">
+              <span>${_truncate(t, 60)}</span>
+              <strong>${n}</strong>
+            </div>`).join('')
+      : '<p class="muted">No topic data.</p>';
+
+    body.innerHTML = `
+      <div class="report-stats">
+        <div class="report-stat">
+          <div class="rs-value">${data.questions_asked}</div>
+          <div class="rs-label">Questions Asked</div>
+        </div>
+        <div class="report-stat">
+          <div class="rs-value">${data.questions_tossed}</div>
+          <div class="rs-label">Questions Tossed</div>
+        </div>
+        <div class="report-stat">
+          <div class="rs-value">${Object.keys(data.topics_covered || {}).length}</div>
+          <div class="rs-label">Domains Covered</div>
+        </div>
+      </div>
+      <div style="margin-top:1.1rem;">
+        <div class="report-section-title">Topics Breakdown</div>
+        ${topicsHtml}
+      </div>
+      <div style="margin-top:1rem; font-size:.8rem; color:var(--muted);">
+        Generated: ${data.generated_at ? new Date(data.generated_at * 1000).toLocaleString() : '—'}
+      </div>`;
+
+    card.style.display = 'block';
+  } catch (_) {}
 }
 
 /* ─── Test AI ────────────────────────────────────────────────── */

@@ -22,6 +22,7 @@ from cognita.core.teacher_interface import KimiK2Teacher, TeacherOrchestrator
 from cognita.training.curriculum import GenerativeCurriculum
 from cognita.storage.checkpoint_manager import KnowledgeBaseManager
 from cognita.storage.firebase_memory import FirebaseMemory
+from cognita.storage.question_bank import QuestionBank
 
 app = FastAPI(title="NERO API", version="1.0.0")
 
@@ -38,17 +39,22 @@ app.add_middleware(
 brain: Optional[NEROBrain] = None
 teacher: Optional[TeacherOrchestrator] = None
 knowledge_manager: Optional[KnowledgeBaseManager] = None
+question_bank: Optional[QuestionBank] = None
 training_active = False
+training_complete = False
+_topics_description: str = ""
+_repeat_threshold: int = 75
+_final_report: Optional[Dict] = None
 
 
 class TrainingConfig(BaseModel):
     teacher_api_key: str
-    teacher_base_url: str           # e.g. https://api.moonshot.cn/v1
-    teacher_model: str              # e.g. kimi-k2-5
-    topics: List[str]
+    teacher_base_url: str                   # e.g. https://api.moonshot.cn/v1
+    teacher_model: str                      # e.g. kimi-k2-5
+    topics_description: str                 # free-form paragraph describing training focus
+    question_repeat_threshold: int = 75     # halt when toss log reaches this count
     total_examples: int = 100
     knowledge_base_path: str = "./knowledge_base"
-    # Firebase — optional. Omit to run local-only.
     firebase_credential_path: Optional[str] = None
     brain_id: str = "default"
 
@@ -71,8 +77,9 @@ async def health_check():
 
 @app.post("/initialize")
 async def initialize_system(config: TrainingConfig):
-    """Initialize brain, teacher, and knowledge base."""
-    global brain, teacher, knowledge_manager
+    """Initialize brain, teacher, knowledge base, and question bank."""
+    global brain, teacher, knowledge_manager, question_bank
+    global _topics_description, _repeat_threshold, training_complete, _final_report
 
     try:
         # Optional Firebase cloud memory
@@ -99,6 +106,13 @@ async def initialize_system(config: TrainingConfig):
             model=config.teacher_model,
         )
         teacher = TeacherOrchestrator(teacher_interface)
+
+        # Initialize question bank
+        question_bank = QuestionBank(config.knowledge_base_path)
+        _topics_description = config.topics_description
+        _repeat_threshold = config.question_repeat_threshold
+        training_complete = False
+        _final_report = None
 
         # Load existing knowledge if available
         kb_summary = knowledge_manager.get_attachable_knowledge_summary()
@@ -178,7 +192,7 @@ def _run_validation(dataset, batch_size: int) -> Dict:
 
 async def training_loop():
     """Background training loop — real forward/backward/optimizer steps."""
-    global training_active
+    global training_active, training_complete, _final_report
 
     BATCH_SIZE = 8
     GRAD_ACCUM_STEPS = 4
@@ -188,7 +202,11 @@ async def training_loop():
     PLATEAU_PATIENCE = 3          # Advance phase after N val checks with no improvement
     PLATEAU_MIN_DELTA = 0.01      # Minimum improvement to reset patience counter
 
-    curriculum = GenerativeCurriculum(teacher, brain.tokenizer)
+    curriculum = GenerativeCurriculum(
+        teacher,
+        brain.tokenizer,
+        topics_description=_topics_description,
+    )
 
     optimizer = AdamW(
         list(brain.model.parameters()) + list(brain.generative_head.parameters()),
@@ -207,7 +225,17 @@ async def training_loop():
     current_dataset = None
 
     while training_active:
-        current_dataset = curriculum.generate_phase_batch(batch_size=20)
+        # Check repeat threshold before generating new batch
+        if question_bank and question_bank.toss_count >= _repeat_threshold:
+            training_active = False
+            training_complete = True
+            _final_report = question_bank.generate_report(_topics_description)
+            break
+
+        current_dataset = curriculum.generate_phase_batch(
+            batch_size=20,
+            question_bank=question_bank,
+        )
         loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
         for batch in loader:
@@ -299,16 +327,20 @@ async def training_websocket(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            if brain and training_active:
+            if brain:
                 last = brain.training_history[-1] if brain.training_history else {}
                 metrics = {
-                    "loss": last.get("loss"),
-                    "val_loss": last.get("val_loss"),
-                    "val_perplexity": last.get("val_perplexity"),
-                    "phase": last.get("phase"),
-                    "step": last.get("step", 0),
+                    "loss":               last.get("loss"),
+                    "val_loss":           last.get("val_loss"),
+                    "val_perplexity":     last.get("val_perplexity"),
+                    "phase":              last.get("phase"),
+                    "step":               last.get("step", 0),
                     "examples_processed": len(brain.training_history),
-                    "timestamp": asyncio.get_event_loop().time(),
+                    "bank_count":         question_bank.bank_count if question_bank else 0,
+                    "toss_count":         question_bank.toss_count if question_bank else 0,
+                    "repeat_threshold":   _repeat_threshold,
+                    "training_complete":  training_complete,
+                    "timestamp":          asyncio.get_event_loop().time(),
                 }
                 await websocket.send_json(metrics)
 
@@ -349,6 +381,44 @@ async def export_knowledge(output_path: str = ".", name: str = "latest"):
 
     output = knowledge_manager.export_knowledge_package(output_path, name)
     return {"status": "exported", "path": str(output)}
+
+
+@app.get("/logs/question-bank")
+async def get_question_bank():
+    """Return all unique questions that have been transmitted to NERO."""
+    if not question_bank:
+        raise HTTPException(status_code=400, detail="System not initialized")
+    return {
+        "count": question_bank.bank_count,
+        "entries": question_bank.get_bank(),
+    }
+
+
+@app.get("/logs/toss-log")
+async def get_toss_log():
+    """Return all duplicate questions that were discarded."""
+    if not question_bank:
+        raise HTTPException(status_code=400, detail="System not initialized")
+    return {
+        "count": question_bank.toss_count,
+        "threshold": _repeat_threshold,
+        "entries": question_bank.get_toss_log(),
+    }
+
+
+@app.get("/logs/report")
+async def get_report():
+    """Return the final training completion report (only available after training completes)."""
+    if not question_bank:
+        raise HTTPException(status_code=400, detail="System not initialized")
+    if not training_complete:
+        return {
+            "status": "in_progress",
+            "bank_count": question_bank.bank_count,
+            "toss_count": question_bank.toss_count,
+            "threshold": _repeat_threshold,
+        }
+    return _final_report
 
 
 # Serve static dashboard — must be mounted last so API routes take priority
