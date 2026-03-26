@@ -257,107 +257,109 @@ async def training_loop():
     plateau_count = 0
     current_dataset = None
 
-    try:
-        while training_active:
-        # Check repeat threshold before generating new batch
-        if question_bank and question_bank.toss_count >= _repeat_threshold:
-            training_active = False
-            training_complete = True
-            _final_report = question_bank.generate_report(_topics_description)
-            break
-
-        current_dataset = curriculum.generate_phase_batch(
-            batch_size=20,
-            question_bank=question_bank,
-        )
-        loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True)
-
-        for batch in loader:
-            if not training_active:
+    while training_active:
+        try:
+            # Check repeat threshold before generating new batch
+            if question_bank and question_bank.toss_count >= _repeat_threshold:
+                training_active = False
+                training_complete = True
+                _final_report = question_bank.generate_report(_topics_description)
                 break
 
-            input_ids = batch.input_ids.to(brain.device)
-            attention_mask = batch.attention_mask.to(brain.device)
-            labels = batch.labels.to(brain.device)
-            teacher_logits = batch.teacher_logits.to(brain.device) if batch.teacher_logits is not None else None
-
-            outputs = brain(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                labels=labels,
-                teacher_logits=teacher_logits,
+            current_dataset = curriculum.generate_phase_batch(
+                batch_size=20,
+                question_bank=question_bank,
             )
+            loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-            loss = outputs["loss"] / GRAD_ACCUM_STEPS
-            loss.backward()
+            for batch in loader:
+                if not training_active:
+                    break
 
-            step += 1
-            if step % GRAD_ACCUM_STEPS == 0:
-                torch.nn.utils.clip_grad_norm_(
-                    list(brain.model.parameters()) + list(brain.generative_head.parameters()),
-                    max_norm=1.0,
+                input_ids = batch.input_ids.to(brain.device)
+                attention_mask = batch.attention_mask.to(brain.device)
+                labels = batch.labels.to(brain.device)
+                teacher_logits = batch.teacher_logits.to(brain.device) if batch.teacher_logits is not None else None
+
+                outputs = brain(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                    teacher_logits=teacher_logits,
                 )
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-                optimizer_step += 1
 
-                # Validation pass
-                if optimizer_step % VAL_EVERY_STEPS == 0:
-                    val_metrics = _run_validation(current_dataset, BATCH_SIZE)
-                    val_loss = val_metrics.get("val_loss")
+                loss = outputs["loss"] / GRAD_ACCUM_STEPS
+                loss.backward()
 
+                step += 1
+                if step % GRAD_ACCUM_STEPS == 0:
+                    torch.nn.utils.clip_grad_norm_(
+                        list(brain.model.parameters()) + list(brain.generative_head.parameters()),
+                        max_norm=1.0,
+                    )
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad()
+                    optimizer_step += 1
+
+                    # Validation pass
+                    if optimizer_step % VAL_EVERY_STEPS == 0:
+                        val_metrics = _run_validation(current_dataset, BATCH_SIZE)
+                        val_loss = val_metrics.get("val_loss")
+
+                        brain.training_history.append({
+                            "step": optimizer_step,
+                            "phase": curriculum.phase_names[curriculum.current_phase],
+                            "loss": (loss * GRAD_ACCUM_STEPS).item(),
+                            **val_metrics,
+                        })
+
+                        # Plateau detection for phase advancement
+                        if val_loss is not None:
+                            if best_val_loss - val_loss > PLATEAU_MIN_DELTA:
+                                best_val_loss = val_loss
+                                plateau_count = 0
+                            else:
+                                plateau_count += 1
+
+                            if plateau_count >= PLATEAU_PATIENCE:
+                                if curriculum.advance_phase():
+                                    best_val_loss = float("inf")
+                                    plateau_count = 0
+
+                    # Checkpoint every 100 optimizer steps
+                    if optimizer_step % 100 == 0:
+                        last = brain.training_history[-1] if brain.training_history else {}
+                        knowledge_manager.save_checkpoint(
+                            brain.model.state_dict(),
+                            {
+                                "loss": last.get("loss"),
+                                "val_loss": last.get("val_loss"),
+                                "val_perplexity": last.get("val_perplexity"),
+                                "step": optimizer_step,
+                                "phase": curriculum.current_phase,
+                            },
+                        )
+
+                else:
+                    real_loss = (loss * GRAD_ACCUM_STEPS).item()
                     brain.training_history.append({
                         "step": optimizer_step,
                         "phase": curriculum.phase_names[curriculum.current_phase],
-                        "loss": (loss * GRAD_ACCUM_STEPS).item(),
-                        **val_metrics,
+                        "loss": real_loss,
                     })
 
-                    # Plateau detection for phase advancement
-                    if val_loss is not None:
-                        if best_val_loss - val_loss > PLATEAU_MIN_DELTA:
-                            best_val_loss = val_loss
-                            plateau_count = 0
-                        else:
-                            plateau_count += 1
+                await asyncio.sleep(0)  # Yield control to event loop
 
-                        if plateau_count >= PLATEAU_PATIENCE:
-                            if curriculum.advance_phase():
-                                best_val_loss = float("inf")
-                                plateau_count = 0
+        except Exception as e:
+            import traceback
+            _training_error = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            print(f"[NERO] Training error:\n{_training_error}")
+            training_active = False
+            break
 
-                # Checkpoint every 100 optimizer steps
-                if optimizer_step % 100 == 0:
-                    last = brain.training_history[-1] if brain.training_history else {}
-                    knowledge_manager.save_checkpoint(
-                        brain.model.state_dict(),
-                        {
-                            "loss": last.get("loss"),
-                            "val_loss": last.get("val_loss"),
-                            "val_perplexity": last.get("val_perplexity"),
-                            "step": optimizer_step,
-                            "phase": curriculum.current_phase,
-                        },
-                    )
-
-            else:
-                real_loss = (loss * GRAD_ACCUM_STEPS).item()
-                brain.training_history.append({
-                    "step": optimizer_step,
-                    "phase": curriculum.phase_names[curriculum.current_phase],
-                    "loss": real_loss,
-                })
-
-            await asyncio.sleep(0)  # Yield control to event loop
-
-    except Exception as e:
-        import traceback
-        _training_error = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
-        print(f"[NERO] Training error:\n{_training_error}")
-    finally:
-        brain.eval()
-        training_active = False
+    brain.eval()
+    training_active = False
 
 
 @app.websocket("/ws/training")
