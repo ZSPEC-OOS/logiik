@@ -9,6 +9,18 @@ from typing import List, Dict, Optional, Tuple
 import numpy as np
 from dataclasses import dataclass
 
+
+def collate_examples(batch):
+    """Custom collate for ProcessedExample — stacks fixed-size tensors,
+    drops variable-length teacher_logits to avoid shape mismatch errors."""
+    return ProcessedExample(
+        input_ids=torch.stack([b.input_ids for b in batch]),
+        attention_mask=torch.stack([b.attention_mask for b in batch]),
+        labels=torch.stack([b.labels for b in batch]),
+        teacher_logits=None,  # variable length per example — skip stacking
+        weight=sum(b.weight for b in batch) / len(batch),
+    )
+
 from cognita.core.teacher_interface import TrainingExample
 
 
