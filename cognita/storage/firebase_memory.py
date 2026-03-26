@@ -11,13 +11,14 @@ Firestore layout:
   nero/memory/sessions/{name}     — one doc per training session
   nero/memory/embeddings/{name}   — embedding metadata (not vectors)
 """
+import os
 import requests
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-# ── Hardcoded Firebase project config ─────────────────────────────────
-_PROJECT  = "nero-85ed0"
-_API_KEY  = "AIzaSyAD1Lu8bT5VTZC2k4suWk_X2FfSW9H-fUI"
+# ── Firebase project config (loaded from environment variables) ────────
+_PROJECT  = os.environ["FIREBASE_PROJECT_ID"]
+_API_KEY  = os.environ["FIREBASE_WEB_API_KEY"]
 _BASE_URL = (
     f"https://firestore.googleapis.com/v1"
     f"/projects/{_PROJECT}/databases/(default)/documents"
