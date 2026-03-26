@@ -266,9 +266,10 @@ async def training_loop():
                 _final_report = question_bank.generate_report(_topics_description)
                 break
 
-            current_dataset = curriculum.generate_phase_batch(
-                batch_size=20,
-                question_bank=question_bank,
+            loop = asyncio.get_event_loop()
+            current_dataset = await loop.run_in_executor(
+                None,
+                lambda: curriculum.generate_phase_batch(batch_size=20, question_bank=question_bank)
             )
             loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
