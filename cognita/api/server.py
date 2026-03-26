@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from cognita.core.brain import NEROBrain
 from cognita.core.teacher_interface import KimiK2Teacher, TeacherOrchestrator
-from cognita.training.curriculum import GenerativeCurriculum
+from cognita.training.curriculum import GenerativeCurriculum, collate_examples
 from cognita.storage.checkpoint_manager import KnowledgeBaseManager
 from cognita.storage.firebase_memory import FirebaseMemory
 from cognita.storage.question_bank import QuestionBank
@@ -192,7 +192,7 @@ def _run_validation(dataset, batch_size: int) -> Dict:
     if val_ds is None or len(val_ds) == 0:
         return {}
 
-    loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+    loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate_examples)
     total_loss = 0.0
     total_batches = 0
 
@@ -275,7 +275,7 @@ async def training_loop():
                 lambda: curriculum.generate_phase_batch(batch_size=5, question_bank=question_bank)
             )
             _training_status = "Training on batch…"
-            loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True)
+            loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_examples)
 
             for batch in loader:
                 if not training_active:
