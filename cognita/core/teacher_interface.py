@@ -165,7 +165,7 @@ class TeacherOrchestrator:
                     )
                 except Exception as e:
                     if '429' in str(e) or 'rate_limit' in str(e).lower():
-                        time.sleep(2 ** attempt)  # 1s, 2s, 4s, 8s…
+                        time.sleep(max(3, 2 ** attempt))  # min 3s, then 4s, 8s…
                     else:
                         raise
             raise RuntimeError(f"Rate limit retry exhausted for topic: {topic}")
@@ -176,7 +176,7 @@ class TeacherOrchestrator:
                 example = _make_example(topic, i)
                 batch.append(example)
                 self.generated_examples.append(example)
-                time.sleep(1)  # 1s gap between calls — stays within rate limit
+                time.sleep(3)  # 3s gap between calls — stays within rate limit
 
         return batch
 
