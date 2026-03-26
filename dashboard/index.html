@@ -74,10 +74,24 @@
           <div class="metric-delta" id="m-ppl-d"></div>
         </div>
         <div class="card metric-card">
-          <div class="metric-label">Checkpoints</div>
-          <div class="metric-value" id="m-ckpt">—</div>
-          <div class="metric-delta" id="m-ckpt-d"></div>
+          <div class="metric-label">Questions Asked</div>
+          <div class="metric-value" id="m-bank">—</div>
+          <div class="metric-delta" id="m-bank-d">unique</div>
         </div>
+        <div class="card metric-card" id="m-toss-card">
+          <div class="metric-label">Tossed (dupes)</div>
+          <div class="metric-value" id="m-toss">—</div>
+          <div class="metric-delta" id="m-toss-d"></div>
+        </div>
+      </div>
+
+      <!-- Training complete banner (hidden until triggered) -->
+      <div id="complete-banner" class="complete-banner" style="display:none;">
+        Training complete — repeat threshold reached.
+        <button class="btn btn-sm" style="margin-left:1rem;"
+                onclick="showTab('logs', document.querySelector('[data-tab=logs]'))">
+          View Final Report
+        </button>
       </div>
 
       <!-- Tabs -->
@@ -85,6 +99,7 @@
         <button class="tab active" data-tab="setup"     onclick="showTab('setup',    this)">⚙ Setup</button>
         <button class="tab"        data-tab="monitor"   onclick="showTab('monitor',  this)">📈 Monitor</button>
         <button class="tab"        data-tab="knowledge" onclick="showTab('knowledge',this)">🗄 Knowledge</button>
+        <button class="tab"        data-tab="logs"      onclick="showTab('logs',     this)">📋 Logs</button>
         <button class="tab"        data-tab="test"      onclick="showTab('test',     this)">💬 Test AI</button>
         <button class="tab"        data-tab="help"      onclick="showTab('help',     this)">? Help</button>
       </div>
@@ -122,12 +137,18 @@
               <label>Total Examples</label>
               <input id="f-examples" type="number" value="100" min="10" max="10000" />
             </div>
-            <div class="form-group form-group-full">
-              <label>Training Topics <span class="req">*</span>
-                <span class="hint">— one per line or comma-separated</span>
+            <div class="form-group">
+              <label>Question Repeat Threshold
+                <span class="hint">— halt training when this many duplicates accumulate</span>
               </label>
-              <textarea id="f-topics" rows="4"
-                placeholder="basic_reasoning&#10;fact_recall&#10;pattern_matching&#10;creative_writing"></textarea>
+              <input id="f-threshold" type="number" value="75" min="1" max="10000" />
+            </div>
+            <div class="form-group form-group-full">
+              <label>Training Topics &amp; Focus <span class="req">*</span>
+                <span class="hint">— describe what you want NERO to learn in plain language</span>
+              </label>
+              <textarea id="f-topics" rows="5"
+                placeholder="Focus on advanced data structures including red-black trees, B-trees, and graph algorithms. Emphasise time complexity analysis and real-world application scenarios in database indexing and network routing."></textarea>
             </div>
             <div class="form-group form-group-full">
               <label>Firebase Credential Path
@@ -228,6 +249,100 @@
           </div>
         </div>
       </div>
+
+      <!-- ── Tab: Logs ───────────────────────────────────── -->
+      <div id="tab-logs" class="tab-panel">
+
+        <!-- Summary bar -->
+        <div class="logs-summary card" style="margin-bottom:1.25rem;">
+          <div class="logs-stat">
+            <div class="ls-value" id="ls-bank">—</div>
+            <div class="ls-label">Questions Asked</div>
+          </div>
+          <div class="logs-stat">
+            <div class="ls-value" id="ls-toss">—</div>
+            <div class="ls-label">Tossed (duplicates)</div>
+          </div>
+          <div class="logs-stat">
+            <div class="ls-value" id="ls-threshold">—</div>
+            <div class="ls-label">Repeat Threshold</div>
+          </div>
+          <div class="logs-stat">
+            <div class="ls-value" id="ls-status">—</div>
+            <div class="ls-label">Training Status</div>
+          </div>
+          <button class="btn btn-sm" style="margin-left:auto; align-self:center;"
+                  onclick="loadLogs()">↻ Refresh</button>
+        </div>
+
+        <!-- Toss progress bar -->
+        <div class="card" style="margin-bottom:1.25rem;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:.5rem;">
+            <span style="font-size:.85rem; font-weight:600;">Duplicate Progress toward Threshold</span>
+            <span id="toss-pct" style="font-size:.85rem; color:var(--muted);">—</span>
+          </div>
+          <div class="toss-track">
+            <div class="toss-fill" id="toss-fill" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Final report (shown after completion) -->
+        <div id="final-report-card" class="card final-report" style="display:none; margin-bottom:1.25rem;">
+          <h2>Training Complete — Final Report</h2>
+          <div id="final-report-body"></div>
+        </div>
+
+        <!-- Two-column log tables -->
+        <div class="logs-two-col">
+
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.75rem;">
+              <h2 style="margin:0;">Question Bank</h2>
+              <span id="bank-count-lbl" class="log-count-badge">0</span>
+            </div>
+            <div class="log-table-wrap">
+              <table class="log-table" id="bank-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Question</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody id="bank-tbody">
+                  <tr><td colspan="3" class="muted" style="text-align:center; padding:1rem;">
+                    Not loaded — click Refresh
+                  </td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.75rem;">
+              <h2 style="margin:0;">Toss Log</h2>
+              <span id="toss-count-lbl" class="log-count-badge log-count-warn">0</span>
+            </div>
+            <div class="log-table-wrap">
+              <table class="log-table" id="toss-table">
+                <thead>
+                  <tr>
+                    <th>Duplicate Question</th>
+                    <th>Matched ID</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody id="toss-tbody">
+                  <tr><td colspan="3" class="muted" style="text-align:center; padding:1rem;">
+                    Not loaded — click Refresh
+                  </td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /tab-logs -->
 
       <!-- ── Tab: Help ───────────────────────────────────── -->
       <div id="tab-help" class="tab-panel">

@@ -166,39 +166,55 @@ class GenerativeCurriculum:
         self,
         teacher_orchestrator,
         tokenizer,
+        topics_description: str = "",
         phase_ratios: Tuple[float, float, float] = (0.4, 0.4, 0.2)
     ):
         self.teacher = teacher_orchestrator
         self.tokenizer = tokenizer
+        self.topics_description = topics_description
         self.phase_ratios = phase_ratios
         self.current_phase = 0
         self.phase_names = ["Memorization", "Generation", "Abstraction"]
 
-    def generate_phase_batch(self, batch_size: int) -> CurriculumDataset:
-        """Generate training batch appropriate for current learning phase."""
+    def generate_phase_batch(
+        self,
+        batch_size: int,
+        question_bank=None,   # optional QuestionBank for deduplication
+    ) -> CurriculumDataset:
+        """Generate training batch for current phase, with optional dedup."""
         if self.current_phase == 0:
-            # Phase 1: Standard Q+A with clear correct answers
-            topics = self._get_foundational_topics()
+            topics = self._get_topics()
             examples = self.teacher.generate_curriculum_batch(
                 topics,
-                examples_per_topic=batch_size // len(topics),
+                examples_per_topic=max(1, batch_size // len(topics)),
                 difficulty_progression=True
             )
-
         elif self.current_phase == 1:
-            # Phase 2: Open-ended questions requiring generation
-            topics = self._get_intermediate_topics()
+            topics = self._get_topics()
             examples = self._generate_generative_examples(topics, batch_size)
-
         else:
-            # Phase 3: Cross-domain synthesis
             examples = self._generate_abstraction_examples(batch_size)
+
+        # Deduplicate via Question Bank when provided
+        if question_bank is not None and examples:
+            filtered = [
+                ex for ex in examples
+                if question_bank.check_and_log(ex.question, self.topics_description)
+            ]
+            # Always keep at least one example to avoid an empty dataset
+            examples = filtered if filtered else examples[:1]
 
         return CurriculumDataset(
             examples,
             self.tokenizer,
             generative_ratio=self.phase_ratios[self.current_phase]
         )
+
+    def _get_topics(self) -> List[str]:
+        """Return topic list derived from the free-form description."""
+        if self.topics_description.strip():
+            return [self.topics_description]
+        return ["general_knowledge"]
 
     def _generate_generative_examples(
         self, topics: List[str], count: int
@@ -237,26 +253,18 @@ class GenerativeCurriculum:
             return True
         return False
 
-    def _get_foundational_topics(self) -> List[str]:
-        return ["basic_reasoning", "fact_recall", "pattern_matching", "classification"]
-
-    def _get_intermediate_topics(self) -> List[str]:
-        return ["creative_writing", "problem_solving", "analysis", "synthesis"]
-
     def _generate_abstraction_examples(self, count: int) -> List[TrainingExample]:
-        """Generate cross-domain synthesis problems."""
-        topics = self._get_foundational_topics() + self._get_intermediate_topics()
+        """Generate cross-domain synthesis problems from the topics description."""
+        topic = self.topics_description or "general_knowledge"
         examples = []
 
-        for i in range(count):
-            topic = topics[i % len(topics)]
+        for _ in range(count):
             base = self.teacher.teachers[0].generate_training_example(
                 topic, difficulty=0.8, num_answers=5
             )
-
             cross_domain = TrainingExample(
                 question=(
-                    f"Connecting {base.domain} with other fields: {base.question}\n"
+                    f"Connecting ideas across fields: {base.question}\n"
                     "(Draw on knowledge from multiple domains)"
                 ),
                 answers=base.answers,

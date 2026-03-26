@@ -347,6 +347,141 @@ textarea:focus { outline: none; border-color: var(--accent); background: #fff; }
 .r-label  { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .r-val    { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
 
+/* ─── Metrics row (6 cards) ──────────────────────────────────── */
+.metrics-row { grid-template-columns: repeat(6, 1fr); }
+
+/* ─── Training complete banner ───────────────────────────────── */
+.complete-banner {
+  display: flex;
+  align-items: center;
+  background: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  border-radius: var(--radius);
+  padding: .75rem 1.25rem;
+  margin-bottom: 1.25rem;
+  font-size: .88rem;
+  font-weight: 600;
+  color: #1b5e20;
+}
+
+.status-badge.complete { background: #e3f2fd; color: #1565c0; }
+
+/* ─── Logs tab ───────────────────────────────────────────────── */
+.logs-summary {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.logs-stat { text-align: center; }
+.ls-value  { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+.ls-label  { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: .2rem; }
+
+/* toss progress bar */
+.toss-track {
+  height: 12px;
+  background: #e0e0e0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.toss-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width .4s, background .4s;
+}
+.toss-fill-warn { background: #ffa726; }
+.toss-fill-done { background: var(--green); }
+
+/* two-column log layout */
+.logs-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.log-count-badge {
+  background: #e8eafd;
+  color: var(--accent);
+  font-size: .75rem;
+  font-weight: 700;
+  padding: .15rem .55rem;
+  border-radius: 999px;
+}
+.log-count-warn {
+  background: #fff3e0;
+  color: var(--orange);
+}
+
+.log-table-wrap {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+}
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+.log-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  text-align: left;
+  padding: .45rem .75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  z-index: 1;
+}
+.log-table td {
+  padding: .45rem .75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-table tr:last-child td { border-bottom: none; }
+.log-table tr:hover td { background: var(--bg); }
+
+/* Final report */
+.final-report { border: 2px solid var(--green); }
+.final-report h2 { color: var(--green); }
+
+.report-stats {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  margin-top: .5rem;
+}
+.report-stat { text-align: center; }
+.rs-value    { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+.rs-label    { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+.report-section-title {
+  font-size: .78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  margin-bottom: .5rem;
+}
+.report-topic {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: .35rem .6rem;
+  font-size: .84rem;
+  border-bottom: 1px solid var(--border);
+}
+.report-topic:last-child { border-bottom: none; }
+.report-topic strong { color: var(--accent); margin-left: 1rem; white-space: nowrap; }
+
 /* ─── Help button ────────────────────────────────────────────── */
 .btn.btn-help {
   background: #f0f4ff;
@@ -611,16 +746,17 @@ footer {
 .muted { color: var(--muted); }
 
 /* ─── Responsive ─────────────────────────────────────────────── */
-@media (max-width: 1100px) {
+@media (max-width: 1280px) {
   .metrics-row { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 860px) {
   .sidebar { position: static; width: 100%; border-right: none; border-bottom: 1px solid var(--border); flex-direction: row; flex-wrap: wrap; }
   .main { margin-left: 0; }
   .metrics-row { grid-template-columns: repeat(2, 1fr); }
-  .phases, .two-col, .form-grid { grid-template-columns: 1fr; }
+  .phases, .two-col, .form-grid, .logs-two-col { grid-template-columns: 1fr; }
   .form-group-full { grid-column: 1; }
   .help-phases-list { grid-template-columns: 1fr; }
   .help-dl-row { grid-template-columns: 1fr; gap: .25rem; }
   .help-diagram { flex-direction: column; align-items: flex-start; }
+  .logs-summary { gap: 1rem; }
 }
