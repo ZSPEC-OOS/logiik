@@ -60,64 +60,64 @@
         <h4>Theme</h4>
         <div class="swatches">
 
-          <button class="swatch active" data-t="polar" onclick="setTheme('polar')">
+          <button class="swatch" data-t="nordic" onclick="setTheme('nordic')">
             <div class="swatch-dots">
-              <span style="background:#667eea"></span>
-              <span style="background:#f4f5f9"></span>
-              <span style="background:#ffffff"></span>
+              <span style="background:#88c0d0"></span>
+              <span style="background:#3b4252"></span>
+              <span style="background:#eceff4"></span>
             </div>
-            <div class="swatch-name">Polar</div>
-            <div class="swatch-sub">Light</div>
+            <div class="swatch-name">Nordic</div>
+            <div class="swatch-sub">Cool slate</div>
           </button>
 
-          <button class="swatch" data-t="obsidian" onclick="setTheme('obsidian')">
+          <button class="swatch" data-t="dusk" onclick="setTheme('dusk')">
             <div class="swatch-dots">
-              <span style="background:#818cf8"></span>
-              <span style="background:#0f0f13"></span>
-              <span style="background:#1a1a22"></span>
+              <span style="background:#e07b39"></span>
+              <span style="background:#1e1714"></span>
+              <span style="background:#d4a96a"></span>
             </div>
-            <div class="swatch-name">Obsidian</div>
-            <div class="swatch-sub">Dark neutral</div>
+            <div class="swatch-name">Dusk</div>
+            <div class="swatch-sub">Warm dark</div>
           </button>
 
-          <button class="swatch" data-t="midnight" onclick="setTheme('midnight')">
+          <button class="swatch" data-t="sage" onclick="setTheme('sage')">
             <div class="swatch-dots">
-              <span style="background:#60a5fa"></span>
-              <span style="background:#0c1525"></span>
-              <span style="background:#132035"></span>
+              <span style="background:#4ecdb4"></span>
+              <span style="background:#161e1d"></span>
+              <span style="background:#88d8b0"></span>
             </div>
-            <div class="swatch-name">Midnight</div>
-            <div class="swatch-sub">Deep navy</div>
+            <div class="swatch-name">Sage</div>
+            <div class="swatch-sub">Calm teal</div>
           </button>
 
-          <button class="swatch" data-t="forest" onclick="setTheme('forest')">
+          <button class="swatch" data-t="lavender" onclick="setTheme('lavender')">
             <div class="swatch-dots">
-              <span style="background:#34d399"></span>
-              <span style="background:#0a1a10"></span>
-              <span style="background:#112518"></span>
+              <span style="background:#7c63d9"></span>
+              <span style="background:#f2f0f8"></span>
+              <span style="background:#9c84e6"></span>
             </div>
-            <div class="swatch-name">Forest</div>
-            <div class="swatch-sub">Dark emerald</div>
+            <div class="swatch-name">Lavender</div>
+            <div class="swatch-sub">Soft light</div>
           </button>
 
-          <button class="swatch" data-t="amber" onclick="setTheme('amber')">
+          <button class="swatch" data-t="slate" onclick="setTheme('slate')">
             <div class="swatch-dots">
-              <span style="background:#fbbf24"></span>
-              <span style="background:#17110a"></span>
-              <span style="background:#231908"></span>
+              <span style="background:#5b8def"></span>
+              <span style="background:#0f1117"></span>
+              <span style="background:#7cb3ff"></span>
             </div>
-            <div class="swatch-name">Amber</div>
-            <div class="swatch-sub">Warm gold</div>
+            <div class="swatch-name">Slate</div>
+            <div class="swatch-sub">Pro dark</div>
           </button>
 
-          <button class="swatch" data-t="rose" onclick="setTheme('rose')">
+          <button class="swatch" data-t="espresso" onclick="setTheme('espresso')">
             <div class="swatch-dots">
-              <span style="background:#f472b6"></span>
-              <span style="background:#18080f"></span>
-              <span style="background:#24101c"></span>
+              <span style="background:#c0774a"></span>
+              <span style="background:#150f0d"></span>
+              <span style="background:#d4956a"></span>
             </div>
-            <div class="swatch-name">Rose</div>
-            <div class="swatch-sub">Dark pink</div>
+            <div class="swatch-name">Espresso</div>
+            <div class="swatch-sub">Deep coffee</div>
           </button>
 
         </div>
@@ -244,16 +244,13 @@
               <input id="f-model" type="text" placeholder="kimi-k2-5" />
             </div>
             <div class="form-group">
-              <label>Brain ID</label>
-              <input id="f-brainid" type="text" value="default" />
-            </div>
-            <div class="form-group">
-              <label>Knowledge Base Path</label>
-              <input id="f-kbpath" type="text" value="./knowledge_base" />
-            </div>
-            <div class="form-group">
-              <label>Total Examples</label>
-              <input id="f-examples" type="number" value="100" min="10" max="10000" />
+              <label>Knowledge Base Folder
+                <span class="hint">— where NERO stores all learned data locally</span>
+              </label>
+              <div class="input-browse">
+                <input id="f-kbpath" type="text" placeholder="Click Browse to choose a folder…" readonly />
+                <button class="btn btn-browse" onclick="browseFolder()">Browse…</button>
+              </div>
             </div>
             <div class="form-group">
               <label>Question Repeat Threshold
@@ -269,10 +266,10 @@
                 placeholder="Focus on advanced data structures including red-black trees, B-trees, and graph algorithms. Emphasise time complexity analysis and real-world application scenarios in database indexing and network routing."></textarea>
             </div>
             <div class="form-group form-group-full">
-              <label>Firebase Credential Path
-                <span class="hint">— optional, leave blank for local-only</span>
-              </label>
-              <input id="f-firebase" type="text" placeholder="/path/to/serviceAccount.json" />
+              <div class="firebase-badge">
+                <span class="firebase-dot"></span>
+                Firebase sync active — knowledge metadata auto-synced to cloud
+              </div>
             </div>
           </div>
 

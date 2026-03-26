@@ -53,10 +53,7 @@ class TrainingConfig(BaseModel):
     teacher_model: str                      # e.g. kimi-k2-5
     topics_description: str                 # free-form paragraph describing training focus
     question_repeat_threshold: int = 75     # halt when toss log reaches this count
-    total_examples: int = 100
     knowledge_base_path: str = "./knowledge_base"
-    firebase_credential_path: Optional[str] = None
-    brain_id: str = "default"
 
 
 class QuestionRequest(BaseModel):
@@ -75,6 +72,22 @@ async def health_check():
     }
 
 
+@app.get("/browse-folder")
+async def browse_folder():
+    """Open a native OS folder-picker dialog and return the chosen path."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", 1)
+        path = filedialog.askdirectory(title="Select Knowledge Base Folder")
+        root.destroy()
+        return {"path": path or ""}
+    except Exception as e:
+        return {"path": "", "error": str(e)}
+
+
 @app.post("/initialize")
 async def initialize_system(config: TrainingConfig):
     """Initialize brain, teacher, knowledge base, and question bank."""
@@ -82,15 +95,10 @@ async def initialize_system(config: TrainingConfig):
     global _topics_description, _repeat_threshold, training_complete, _final_report
 
     try:
-        # Optional Firebase cloud memory
-        firebase = None
-        if config.firebase_credential_path:
-            firebase = FirebaseMemory(
-                brain_id=config.brain_id,
-                credential_path=config.firebase_credential_path,
-            )
+        # Firebase is always active — config is hardcoded in firebase_memory.py
+        firebase = FirebaseMemory()
 
-        # Initialize knowledge manager — local brain, optional cloud memory
+        # Initialize knowledge manager — local storage + cloud sync
         knowledge_manager = KnowledgeBaseManager(
             config.knowledge_base_path,
             firebase=firebase,
