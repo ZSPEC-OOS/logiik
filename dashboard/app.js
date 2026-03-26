@@ -626,12 +626,13 @@ function resetFilters() {
 function initTheme() {
   const saved = localStorage.getItem('nero-theme') || 'nordic';
   setTheme(saved);
-  // Restore saved KB path
-  const savedPath = localStorage.getItem('nero-kbpath');
-  if (savedPath) {
-    const el = document.getElementById('f-kbpath');
-    if (el) el.value = savedPath;
-  }
+  // Restore saved form fields
+  const fields = ['f-apikey', 'f-baseurl', 'f-model', 'f-kbpath', 'f-threshold', 'f-topics'];
+  fields.forEach(id => {
+    const val = localStorage.getItem('nero-' + id);
+    const el  = document.getElementById(id);
+    if (val !== null && el) el.value = val;
+  });
   ['brightness', 'contrast', 'exposure'].forEach(type => {
     const stored = localStorage.getItem(`nero-filter-${type}`);
     if (stored !== null) {
@@ -645,6 +646,13 @@ function initTheme() {
 /* ─── Boot ───────────────────────────────────────────────────── */
 (async function init() {
   initTheme();
+
+  // Auto-save form fields to localStorage as the user types
+  ['f-apikey', 'f-baseurl', 'f-model', 'f-kbpath', 'f-threshold', 'f-topics'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => localStorage.setItem('nero-' + id, el.value));
+  });
+
   renderPhases();
   await refreshMetrics();
   connectWS();
