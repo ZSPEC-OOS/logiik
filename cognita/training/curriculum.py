@@ -173,6 +173,7 @@ class GenerativeCurriculum:
     Phase 2: Generate novel answers given questions (generation)
     Phase 3: Synthesize knowledge across domains (abstraction)
     Phase 4: Demonstrate complete coding understanding across common languages
+    Phase 5: Build specialized scientific framework competency (Drosophila genetics focus)
     """
 
     def __init__(
@@ -180,7 +181,7 @@ class GenerativeCurriculum:
         teacher_orchestrator,
         tokenizer,
         topics_description: str = "",
-        phase_ratios: Tuple[float, float, float, float] = (0.3, 0.3, 0.2, 0.2),
+        phase_ratios: Tuple[float, float, float, float, float] = (0.25, 0.25, 0.2, 0.15, 0.15),
         phase_topics: Optional[Dict[str, List[str]]] = None,
         topics_per_session: int = 5,
     ):
@@ -189,7 +190,13 @@ class GenerativeCurriculum:
         self.topics_description = topics_description
         self.phase_ratios = phase_ratios
         self.current_phase = 0
-        self.phase_names = ["Memorization", "Generation", "Abstraction", "Coding Mastery"]
+        self.phase_names = [
+            "Memorization",
+            "Generation",
+            "Abstraction",
+            "Coding Mastery",
+            "Drosophila AI Framework",
+        ]
         # Keyed by lowercase phase name; each value is an ordered topic list
         self.phase_topics: Dict[str, List[str]] = phase_topics or {}
         self.topics_per_session = topics_per_session
@@ -216,8 +223,10 @@ class GenerativeCurriculum:
             examples = self._generate_generative_examples(topics, batch_size)
         elif self.current_phase == 2:
             examples = self._generate_abstraction_examples(batch_size)
-        else:
+        elif self.current_phase == 3:
             examples = self._generate_coding_mastery_examples(batch_size)
+        else:
+            examples = self._generate_drosophila_framework_examples(batch_size)
 
         # Deduplicate via Question Bank when provided
         if question_bank is not None and examples:
@@ -339,5 +348,38 @@ class GenerativeCurriculum:
                 explanation=f"Coding mastery synthesis: {base.explanation}"
             )
             examples.append(coding_mastery)
+
+        return examples
+
+    def _generate_drosophila_framework_examples(self, count: int) -> List[TrainingExample]:
+        """
+        Generate expert-level interdisciplinary prompts for a specialized
+        Drosophila melanogaster genetics AI framework, centered on axon
+        guidance and neural wiring with first-principles integration.
+        """
+        topics = self._get_topics()
+        examples = []
+
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.95, num_answers=5
+            )
+            drosophila_framework = TrainingExample(
+                question=(
+                    f"Drosophila framework design challenge: {base.question}\n"
+                    "(Trace genotype → molecular pathway → circuit wiring → behavior, "
+                    "with chemistry, microbiology, and neuroscience integration)"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.98,
+                domain=f"drosophila_framework_{base.domain}",
+                explanation=(
+                    "Specialized AI framework reasoning for Drosophila genetics "
+                    f"and axon guidance: {base.explanation}"
+                ),
+            )
+            examples.append(drosophila_framework)
 
         return examples
