@@ -1,52 +1,146 @@
-/* ─── Config ────────────────────────────────────────────────── */
+/* ─── Config ─────────────────────────────────────────────────── */
 const API = window.location.origin;
 const WS  = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/training`;
 
-/* ─── State ─────────────────────────────────────────────────── */
+/* ─── State ──────────────────────────────────────────────────── */
 const state = {
-  training: false,
-  lossHistory: [],
-  accuracyHistory: [],
-  genHistory: [],
-  steps: [],
+  initialized: false,
+  training:    false,
+  phase:       null,        // current phase name from WS
+  steps:       [],
+  trainLoss:   [],
+  valLoss:     [],
+  valPpl:      [],
+  valSteps:    [],          // steps at which val metrics arrived
+  logEntries:  [],
 };
 
-/* ─── Phases config ─────────────────────────────────────────── */
-const PHASES = [
-  { title: "Phase 1: Memorization",  desc: "Learning from Teacher's Q+A structure", color: "#4CAF50", progress: 100, status: "completed" },
-  { title: "Phase 2: Generation",    desc: "Creating original answers",               color: "#667eea", progress: 65,  status: "active"    },
-  { title: "Phase 3: Abstraction",   desc: "Cross-domain knowledge synthesis",        color: "#9e9e9e", progress: 0,   status: "pending"   },
+/* ─── Phase definitions ──────────────────────────────────────── */
+const PHASE_DEFS = [
+  { key: 'Memorization', label: 'Phase 1 · Memorization', desc: 'Learning Q+A structure from Kimi K2.5', color: '#4CAF50' },
+  { key: 'Generation',   label: 'Phase 2 · Generation',   desc: 'Creating original answers',              color: '#667eea' },
+  { key: 'Abstraction',  label: 'Phase 3 · Abstraction',  desc: 'Cross-domain knowledge synthesis',       color: '#f093fb' },
 ];
 
-/* ─── Tab switching ─────────────────────────────────────────── */
+/* ─── Tab switching ──────────────────────────────────────────── */
 function showTab(id, btn) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
   document.getElementById(`tab-${id}`).classList.add('active');
   btn.classList.add('active');
-  if (id === 'monitor') renderCharts();
+  if (id === 'monitor')   { renderPhases(); renderCharts(); }
+  if (id === 'knowledge') loadKBFolders();
 }
 
-/* ─── Status badge ──────────────────────────────────────────── */
+/* ─── Status badge ───────────────────────────────────────────── */
 function setStatus(label, cls) {
   const el = document.getElementById('status-badge');
   el.textContent = `● ${label}`;
-  el.className = `status-badge ${cls}`;
+  el.className   = `status-badge ${cls}`;
 }
 
-/* ─── Training controls ─────────────────────────────────────── */
+/* ─── Metric helpers ─────────────────────────────────────────── */
+function setMetric(id, value, delta) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value ?? '—';
+  const dd = document.getElementById(`${id}-d`);
+  if (dd && delta !== undefined) dd.textContent = delta;
+}
+
+function fmt(n, decimals = 4) {
+  return n == null ? '—' : Number(n).toFixed(decimals);
+}
+
+/* ─── Initialize system ──────────────────────────────────────── */
+async function initializeSystem() {
+  const apiKey   = document.getElementById('f-apikey').value.trim();
+  const baseUrl  = document.getElementById('f-baseurl').value.trim();
+  const model    = document.getElementById('f-model').value.trim();
+  const topicsRaw= document.getElementById('f-topics').value.trim();
+  const kbPath   = document.getElementById('f-kbpath').value.trim();
+  const brainId  = document.getElementById('f-brainid').value.trim();
+  const totalEx  = parseInt(document.getElementById('f-examples').value, 10);
+  const firebase = document.getElementById('f-firebase').value.trim();
+
+  const msg = document.getElementById('init-msg');
+
+  if (!apiKey || !baseUrl || !model || !topicsRaw) {
+    msg.textContent = 'API Key, Base URL, Model ID, and Topics are required.';
+    msg.className   = 'init-msg error';
+    return;
+  }
+
+  // Parse topics — split on newlines and/or commas, trim blanks
+  const topics = topicsRaw
+    .split(/[\n,]+/)
+    .map(t => t.trim())
+    .filter(Boolean);
+
+  if (topics.length === 0) {
+    msg.textContent = 'Enter at least one topic.';
+    msg.className   = 'init-msg error';
+    return;
+  }
+
+  msg.textContent = 'Initializing…';
+  msg.className   = 'init-msg pending';
+
+  const payload = {
+    teacher_api_key:  apiKey,
+    teacher_base_url: baseUrl,
+    teacher_model:    model,
+    topics,
+    total_examples:   isNaN(totalEx) ? 100 : totalEx,
+    knowledge_base_path: kbPath || './knowledge_base',
+    brain_id:         brainId || 'default',
+  };
+  if (firebase) payload.firebase_credential_path = firebase;
+
+  try {
+    const res  = await fetch(`${API}/initialize`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      msg.textContent = data.detail || 'Initialization failed.';
+      msg.className   = 'init-msg error';
+      return;
+    }
+
+    state.initialized = true;
+    msg.textContent   = `Initialized — ${data.knowledge_base?.checkpoints_count ?? 0} existing checkpoint(s) loaded.`;
+    msg.className     = 'init-msg success';
+
+    document.getElementById('init-state').textContent = 'Initialized';
+    document.getElementById('init-state').className   = 'init-state ready';
+    document.getElementById('btn-start').disabled     = false;
+    document.getElementById('btn-stop').disabled      = false;
+
+    setStatus('Ready', 'idle');
+    refreshMetrics();
+  } catch (e) {
+    msg.textContent = 'Cannot reach NERO API. Is the server running?';
+    msg.className   = 'init-msg error';
+  }
+}
+
+/* ─── Training controls ──────────────────────────────────────── */
 async function startTraining() {
   try {
-    const res = await fetch(`${API}/train/start`, { method: 'POST' });
+    const res  = await fetch(`${API}/train/start`, { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
       state.training = true;
       setStatus('Training', 'active');
+      addLog('system', 'Training started');
     } else {
-      alert(data.detail || 'Could not start training (system not initialized).');
+      addLog('error', data.detail || 'Could not start training.');
     }
-  } catch (e) {
-    alert('API unreachable. Is the NERO server running?');
+  } catch (_) {
+    addLog('error', 'API unreachable.');
   }
 }
 
@@ -54,40 +148,219 @@ async function stopTraining() {
   await fetch(`${API}/train/stop`, { method: 'POST' });
   state.training = false;
   setStatus('Paused', 'paused');
+  addLog('system', 'Training stopped');
 }
 
 async function exportKnowledge() {
-  const res = await fetch(`${API}/knowledge/export`, { method: 'POST' });
-  const data = await res.json();
-  alert(res.ok ? `Exported: ${data.path}` : 'Export failed — is the knowledge manager initialized?');
+  try {
+    const res  = await fetch(`${API}/knowledge/export`, { method: 'POST' });
+    const data = await res.json();
+    addLog(res.ok ? 'system' : 'error', res.ok ? `Knowledge exported to: ${data.path}` : 'Export failed.');
+  } catch (_) {
+    addLog('error', 'Export request failed.');
+  }
 }
 
-/* ─── Metric cards ──────────────────────────────────────────── */
-function setMetric(id, value, delta) {
-  document.getElementById(id).textContent = value;
-  if (delta !== undefined) document.getElementById(`${id}-d`).textContent = delta;
+/* ─── Phases ─────────────────────────────────────────────────── */
+function renderPhases() {
+  const container = document.getElementById('phases');
+  container.innerHTML = PHASE_DEFS.map(p => {
+    const isActive  = state.phase === p.key;
+    const isDone    = state.phase && PHASE_DEFS.findIndex(x => x.key === state.phase) >
+                      PHASE_DEFS.findIndex(x => x.key === p.key);
+    const statusCls = isActive ? 'phase-active' : isDone ? 'phase-done' : 'phase-pending';
+    const badge     = isActive ? 'Active' : isDone ? 'Done' : 'Pending';
+
+    return `
+      <div class="phase ${statusCls}" style="border-left-color:${p.color}">
+        <div class="phase-badge" style="background:${p.color}22; color:${p.color}">${badge}</div>
+        <h4 style="color:${p.color}">${p.label}</h4>
+        <p>${p.desc}</p>
+      </div>`;
+  }).join('');
 }
 
+/* ─── Charts ─────────────────────────────────────────────────── */
+let chartsReady = { loss: false, ppl: false };
+
+function renderCharts() {
+  const base = {
+    paper_bgcolor: 'transparent',
+    plot_bgcolor:  'transparent',
+    font:          { family: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', size: 12 },
+    margin:        { l: 48, r: 16, t: 16, b: 40 },
+    showlegend:    true,
+    legend:        { x: 0, y: 1, orientation: 'h', bgcolor: 'transparent' },
+  };
+
+  const xaxis = { title: 'Optimizer Step', gridcolor: '#e4e6ef', zeroline: false };
+  const yaxis = { gridcolor: '#e4e6ef', zeroline: false };
+
+  // Loss chart
+  Plotly.newPlot('chart-loss', [
+    {
+      x: state.steps, y: state.trainLoss,
+      name: 'Train Loss', type: 'scatter', mode: 'lines',
+      line: { color: '#FF6B6B', width: 2 },
+      fill: 'tozeroy', fillcolor: 'rgba(255,107,107,0.08)',
+    },
+    {
+      x: state.valSteps, y: state.valLoss,
+      name: 'Val Loss', type: 'scatter', mode: 'lines+markers',
+      line: { color: '#4ECDC4', width: 2, dash: 'dot' },
+      marker: { size: 5 },
+    },
+  ], {
+    ...base, xaxis: { ...xaxis }, yaxis: { ...yaxis, title: 'Cross-Entropy Loss' },
+    height: 260,
+  }, { responsive: true });
+
+  // Perplexity chart
+  Plotly.newPlot('chart-ppl', [
+    {
+      x: state.valSteps, y: state.valPpl,
+      name: 'Val Perplexity', type: 'scatter', mode: 'lines+markers',
+      line: { color: '#667eea', width: 2 },
+      fill: 'tozeroy', fillcolor: 'rgba(102,126,234,0.08)',
+      marker: { size: 5 },
+    },
+  ], {
+    ...base, xaxis: { ...xaxis }, yaxis: { ...yaxis, title: 'Perplexity' },
+    height: 220,
+  }, { responsive: true });
+
+  chartsReady = { loss: true, ppl: true };
+}
+
+function extendCharts(step, trainLoss, valLoss, valPpl) {
+  if (!chartsReady.loss) return;
+
+  // Always extend train loss
+  Plotly.extendTraces('chart-loss', {
+    x: [[step]], y: [[trainLoss]],
+  }, [0]);
+
+  // Val metrics only arrive on validation steps
+  if (valLoss != null) {
+    Plotly.extendTraces('chart-loss', { x: [[step]], y: [[valLoss]] }, [1]);
+    Plotly.extendTraces('chart-ppl',  { x: [[step]], y: [[valPpl]]  }, [0]);
+  }
+
+  // Prune to last 200 points
+  const MAX = 200;
+  if (state.steps.length > MAX) {
+    Plotly.relayout('chart-loss', {
+      'xaxis.range': [state.steps[state.steps.length - MAX], state.steps.at(-1)],
+    });
+  }
+}
+
+/* ─── Live training log ──────────────────────────────────────── */
+function addLog(type, message) {
+  const ts    = new Date().toLocaleTimeString();
+  const entry = { ts, type, message };
+  state.logEntries.push(entry);
+  if (state.logEntries.length > 200) state.logEntries.shift();
+
+  const panel = document.getElementById('log-panel');
+  const div   = document.createElement('div');
+  div.className = `log-entry log-${type}`;
+  div.innerHTML = `<span class="log-ts">${ts}</span><span class="log-msg">${message}</span>`;
+  panel.appendChild(div);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function clearLog() {
+  state.logEntries = [];
+  document.getElementById('log-panel').innerHTML = '';
+}
+
+/* ─── WebSocket ──────────────────────────────────────────────── */
+function connectWS() {
+  const ws = new WebSocket(WS);
+
+  ws.onopen  = () => addLog('system', 'WebSocket connected');
+
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+
+    // Update state arrays
+    if (m.step != null) {
+      state.steps.push(m.step);
+      state.trainLoss.push(m.loss ?? null);
+      if (m.val_loss != null) {
+        state.valSteps.push(m.step);
+        state.valLoss.push(m.val_loss);
+        state.valPpl.push(m.val_perplexity);
+      }
+    }
+
+    // Phase tracking
+    if (m.phase && m.phase !== state.phase) {
+      state.phase = m.phase;
+      renderPhases();
+      addLog('phase', `Phase changed → ${m.phase}`);
+    }
+
+    // Metric cards
+    if (m.step   != null) setMetric('m-step',  m.step);
+    if (m.loss   != null) setMetric('m-loss',  fmt(m.loss, 4));
+    if (m.val_loss        != null) {
+      setMetric('m-vloss', fmt(m.val_loss, 4));
+      setMetric('m-ppl',   fmt(m.val_perplexity, 1));
+    }
+
+    // Extend charts if monitor tab visible
+    if (document.getElementById('tab-monitor').classList.contains('active')) {
+      extendCharts(m.step, m.loss, m.val_loss, m.val_perplexity);
+    }
+
+    // Log val events
+    if (m.val_loss != null) {
+      addLog('val', `step ${m.step} — val_loss ${fmt(m.val_loss, 4)} · ppl ${fmt(m.val_perplexity, 1)}`);
+    }
+
+    document.getElementById('last-updated').textContent = `Live · ${new Date().toLocaleTimeString()}`;
+  };
+
+  ws.onclose = () => {
+    addLog('system', 'WebSocket disconnected — reconnecting in 3 s…');
+    setTimeout(connectWS, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+/* ─── Refresh static metrics ─────────────────────────────────── */
 async function refreshMetrics() {
   try {
-    const [healthRes, kbRes] = await Promise.all([
+    const [hRes, kbRes] = await Promise.all([
       fetch(`${API}/health`),
       fetch(`${API}/knowledge/summary`).catch(() => null),
     ]);
-    const health = await healthRes.json();
 
-    setStatus(
-      health.training_active ? 'Training' : health.brain_loaded ? 'Idle' : 'Not initialized',
-      health.training_active ? 'active' : 'idle'
-    );
+    const health = await hRes.json();
+
+    if (!state.initialized && (health.brain_loaded || health.teacher_loaded)) {
+      // Server was already initialized (e.g. page reload)
+      state.initialized = true;
+      document.getElementById('init-state').textContent = 'Initialized';
+      document.getElementById('init-state').className   = 'init-state ready';
+      document.getElementById('btn-start').disabled     = false;
+      document.getElementById('btn-stop').disabled      = false;
+    }
+
     state.training = health.training_active;
+    setStatus(
+      health.training_active ? 'Training' :
+      health.brain_loaded    ? 'Ready'    : 'Not initialized',
+      health.training_active ? 'active'   : 'idle'
+    );
 
     if (kbRes && kbRes.ok) {
       const kb = await kbRes.json();
-      setMetric('m-examples',    kb.checkpoints_count * 100 || '—');
-      setMetric('m-accuracy',    '—');
-      setMetric('m-size',        `${kb.total_size_mb ?? 0} MB`, `${kb.checkpoints_count} checkpoints`);
-      setMetric('m-checkpoints', kb.checkpoints_count, kb.latest_checkpoint ? `Latest: ${kb.latest_checkpoint.name}` : '');
+      setMetric('m-ckpt', kb.checkpoints_count ?? 0,
+        kb.latest_checkpoint ? `Latest: ${kb.latest_checkpoint.name}` : '');
     }
 
     document.getElementById('last-updated').textContent =
@@ -95,172 +368,83 @@ async function refreshMetrics() {
   } catch (_) { /* server offline — keep stale values */ }
 }
 
-/* ─── Phases ────────────────────────────────────────────────── */
-function renderPhases() {
-  const container = document.getElementById('phases');
-  container.innerHTML = PHASES.map(p => `
-    <div class="phase" style="border-left-color:${p.color}; opacity:${p.status === 'pending' ? .6 : 1};">
-      <h4 style="color:${p.color}">${p.title}</h4>
-      <p>${p.desc}</p>
-      <div class="progress-track">
-        <div class="progress-fill" style="width:${p.progress}%; background:${p.color}"></div>
-      </div>
-      <div class="progress-label" style="color:${p.color}">${p.progress}%</div>
-    </div>
-  `).join('');
-}
-
-/* ─── Charts ────────────────────────────────────────────────── */
-function seedData() {
-  if (state.steps.length) return;
-  for (let t = 0; t < 50; t++) {
-    state.steps.push(t);
-    state.lossHistory.push(2.5 * Math.exp(-0.05 * t) + 0.2 + (Math.random() - 0.5) * 0.1);
-    state.accuracyHistory.push(50 + 40 * (1 - Math.exp(-0.05 * t)) + (Math.random() - 0.5) * 4);
-    state.genHistory.push(20 + 60 * (1 - Math.exp(-0.03 * t)));
-  }
-}
-
-function renderCharts() {
-  seedData();
-
-  const shared = { type: 'scatter', mode: 'lines' };
-
-  Plotly.newPlot('charts', [
-    { ...shared, x: state.steps, y: state.lossHistory,
-      name: 'Loss', line: { color: '#FF6B6B', width: 2 },
-      fill: 'tozeroy', fillcolor: 'rgba(255,107,107,0.15)',
-      xaxis: 'x1', yaxis: 'y1' },
-
-    { ...shared, x: state.steps, y: state.accuracyHistory,
-      name: 'Accuracy %', line: { color: '#4ECDC4', width: 2 },
-      fill: 'tozeroy', fillcolor: 'rgba(78,205,196,0.15)',
-      xaxis: 'x2', yaxis: 'y2' },
-
-    { ...shared, x: state.steps, y: state.genHistory,
-      name: 'Originality', line: { color: '#667eea', width: 2, dash: 'dot' },
-      xaxis: 'x3', yaxis: 'y3' },
-
-    { type: 'pie', labels: ['Reasoning','Facts','Creativity','Analysis','Synthesis'],
-      values: [25, 30, 20, 15, 10], hole: 0.6,
-      marker: { colors: ['#667eea','#764ba2','#f093fb','#f5576c','#4facfe'] },
-      textinfo: 'label+percent', textposition: 'outside',
-      domain: { row: 1, column: 1 } },
-  ], {
-    grid: { rows: 2, columns: 2, pattern: 'independent' },
-    annotations: [
-      { text: 'Loss Curve',             xref: 'paper', yref: 'paper', x: 0.22, y: 1.04, showarrow: false, font: { size: 13 } },
-      { text: 'Accuracy Progress',      xref: 'paper', yref: 'paper', x: 0.78, y: 1.04, showarrow: false, font: { size: 13 } },
-      { text: 'Generative Capability',  xref: 'paper', yref: 'paper', x: 0.22, y: 0.46, showarrow: false, font: { size: 13 } },
-      { text: 'Knowledge Distribution', xref: 'paper', yref: 'paper', x: 0.78, y: 0.46, showarrow: false, font: { size: 13 } },
-    ],
-    height: 580,
-    showlegend: false,
-    template: 'plotly_white',
-    margin: { l: 40, r: 20, t: 60, b: 40 },
-  }, { responsive: true });
-}
-
-function pushLiveMetrics(m) {
-  const t = state.steps.length;
-  state.steps.push(t);
-  state.lossHistory.push(m.loss + (Math.random() - 0.5) * 0.05);
-  state.accuracyHistory.push(m.accuracy * 100 + (Math.random() - 0.5) * 2);
-  state.genHistory.push(Math.min(80, 20 + 60 * (1 - Math.exp(-0.03 * t))));
-
-  // Cap to last 100 points
-  if (state.steps.length > 100) {
-    ['steps','lossHistory','accuracyHistory','genHistory'].forEach(k => state[k].shift());
-  }
-
-  Plotly.extendTraces('charts', {
-    x: [[state.steps.at(-1)], [state.steps.at(-1)], [state.steps.at(-1)]],
-    y: [[state.lossHistory.at(-1)], [state.accuracyHistory.at(-1)], [state.genHistory.at(-1)]],
-  }, [0, 1, 2]);
-
-  setMetric('m-accuracy', `${(m.accuracy * 100).toFixed(1)}%`);
-  setMetric('m-examples', m.examples_processed);
-}
-
-/* ─── Knowledge folder tiles ────────────────────────────────── */
+/* ─── Knowledge tab ──────────────────────────────────────────── */
 async function loadKBFolders() {
   try {
     const res = await fetch(`${API}/knowledge/summary`);
     if (!res.ok) throw new Error();
     const kb = await res.json();
-    const el = document.getElementById('kb-folders');
-    const folders = [
-      { name: 'embeddings',    detail: `${kb.embeddings_count ?? 0} sets` },
-      { name: 'checkpoints',   detail: `${kb.checkpoints_count ?? 0} files` },
-      { name: 'training_data', detail: `${kb.training_sessions ?? 0} sessions` },
-      { name: 'metadata',      detail: `${(kb.total_size_mb ?? 0).toFixed(1)} MB total` },
-    ];
-    el.innerHTML = folders.map(f => `
+
+    document.getElementById('kb-folders').innerHTML = [
+      { icon: '📁', name: 'checkpoints',   detail: `${kb.checkpoints_count ?? 0} files` },
+      { icon: '📁', name: 'embeddings',    detail: `${kb.embeddings_count  ?? 0} sets`  },
+      { icon: '📁', name: 'training_data', detail: `${kb.training_sessions ?? 0} sessions` },
+      { icon: '📁', name: 'metadata',      detail: `${(kb.total_size_mb ?? 0).toFixed(2)} MB total` },
+    ].map(f => `
       <div class="folder-item">
-        📁 <strong>${f.name}</strong>
+        ${f.icon} <strong>${f.name}</strong>
         <div class="folder-meta">${f.detail}</div>
       </div>
     `).join('');
+
+    const latest = kb.latest_checkpoint;
+    document.getElementById('kb-latest').innerHTML = latest ? `
+      <div class="ckpt-card">
+        <div class="ckpt-name">${latest.name ?? 'checkpoint'}</div>
+        <div class="ckpt-meta">Loss: ${fmt(latest.loss, 4)}</div>
+        <div class="ckpt-meta">Val Loss: ${fmt(latest.val_loss, 4)}</div>
+        <div class="ckpt-meta">Val Perplexity: ${fmt(latest.val_perplexity, 1)}</div>
+        <div class="ckpt-meta">Phase: ${latest.phase ?? '—'}</div>
+        <div class="ckpt-meta">Step: ${latest.step ?? '—'}</div>
+      </div>
+    ` : '<p class="muted">No checkpoints yet.</p>';
+
   } catch (_) {
     document.getElementById('kb-folders').innerHTML =
       '<p class="muted">Knowledge manager not initialized.</p>';
   }
 }
 
-/* ─── Ask AI ────────────────────────────────────────────────── */
+/* ─── Test AI ────────────────────────────────────────────────── */
 async function askAI() {
-  const q = document.getElementById('question-input').value.trim();
+  const q    = document.getElementById('question-input').value.trim();
+  const orig = document.getElementById('require-original').checked;
   if (!q) return;
 
   const area = document.getElementById('response-area');
-  area.style.display = 'none';
-  document.getElementById('response-text').textContent = 'Thinking…';
   area.style.display = 'block';
+  document.getElementById('response-text').textContent = 'Thinking…';
+  ['r-conf','r-orig','r-tok'].forEach(id => document.getElementById(id).textContent = '—');
 
   try {
-    const res = await fetch(`${API}/ask`, {
-      method: 'POST',
+    const res  = await fetch(`${API}/ask`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q, require_original: true }),
+      body:    JSON.stringify({ question: q, require_original: orig }),
     });
 
     if (!res.ok) {
       const err = await res.json();
-      document.getElementById('response-text').textContent = err.detail || 'Error from API.';
+      document.getElementById('response-text').textContent = err.detail || 'API error.';
       return;
     }
 
     const data = await res.json();
-    document.getElementById('response-text').textContent =
-      data.answer || data.response || JSON.stringify(data);
-    document.getElementById('r-conf').textContent =
-      data.confidence != null ? `${(data.confidence * 100).toFixed(0)}%` : '—';
-    document.getElementById('r-orig').textContent = data.is_original ? 'High' : 'Low';
-    document.getElementById('r-tok').textContent  = data.tokens ?? '—';
+    document.getElementById('response-text').textContent = data.answer || '(empty response)';
+    document.getElementById('r-conf').textContent  =
+      data.confidence != null ? `${(data.confidence * 100).toFixed(1)}%` : '—';
+    document.getElementById('r-orig').textContent  = data.is_original ? 'Yes' : 'No';
+    document.getElementById('r-tok').textContent   = data.tokens_used ?? '—';
   } catch (_) {
     document.getElementById('response-text').textContent =
       'Cannot reach NERO API. Is the server running?';
   }
 }
 
-/* ─── WebSocket ─────────────────────────────────────────────── */
-function connectWS() {
-  const ws = new WebSocket(WS);
-  ws.onmessage = e => {
-    const m = JSON.parse(e.data);
-    pushLiveMetrics(m);
-    document.getElementById('last-updated').textContent =
-      `Live · ${new Date().toLocaleTimeString()}`;
-  };
-  ws.onclose = () => setTimeout(connectWS, 3000); // auto-reconnect
-}
-
-/* ─── Init ──────────────────────────────────────────────────── */
+/* ─── Boot ───────────────────────────────────────────────────── */
 (async function init() {
   renderPhases();
-  renderCharts();
   await refreshMetrics();
-  loadKBFolders();
   connectWS();
-  setInterval(refreshMetrics, 10_000);
+  setInterval(refreshMetrics, 15_000);
 })();
