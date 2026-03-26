@@ -2,6 +2,7 @@
 Curriculum Engine - Implements the Question + 5-10 Answers training structure
 with progressive learning and generative capability development.
 """
+import math
 import torch
 from torch.utils.data import Dataset
 from typing import List, Dict, Optional, Tuple
@@ -34,24 +35,47 @@ class CurriculumDataset(Dataset):
         examples: List[TrainingExample],
         tokenizer,
         max_length: int = 512,
-        generative_ratio: float = 0.3  # 30% examples for generative training
+        generative_ratio: float = 0.3,
+        val_ratio: float = 0.1,        # fraction of (q, ai) pairs held out for validation
+        _items: Optional[List[Tuple["TrainingExample", int]]] = None,  # internal use
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.generative_ratio = generative_ratio
 
+        if _items is not None:
+            # Used by val_dataset — receives a pre-split item list directly
+            self.items = _items
+            self.examples = examples
+            self._val_dataset = None
+            return
+
         # Expand each TrainingExample into one item per answer so the model
         # learns P(a_i | q) independently for every answer in the set.
-        self.items: List[Tuple[TrainingExample, int]] = []
+        all_items: List[Tuple[TrainingExample, int]] = []
         for ex in examples:
             for ans_idx in range(len(ex.answers)):
-                self.items.append((ex, ans_idx))
+                all_items.append((ex, ans_idx))
+
+        # Deterministic train/val split (last val_ratio fraction held out)
+        split = int(len(all_items) * (1 - val_ratio))
+        self.items = all_items[:split]
+        val_items = all_items[split:]
+
+        # Expose validation set as a separate Dataset instance
+        self._val_dataset: Optional["CurriculumDataset"] = CurriculumDataset(
+            examples, tokenizer, max_length, generative_ratio, _items=val_items
+        )
 
         # Retain original examples list for phase splitting
         self.examples = examples
         split_point = int(len(examples) * (1 - generative_ratio))
         self.memorization_examples = examples[:split_point]
         self.generative_examples = examples[split_point:]
+
+    @property
+    def val_dataset(self) -> Optional["CurriculumDataset"]:
+        return self._val_dataset
 
     def __len__(self):
         return len(self.items)

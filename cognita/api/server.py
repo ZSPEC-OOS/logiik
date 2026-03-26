@@ -140,6 +140,42 @@ async def stop_training():
     return {"status": "training_stopped"}
 
 
+def _run_validation(dataset, batch_size: int) -> Dict:
+    """Compute validation loss and perplexity with no_grad. Returns metrics dict."""
+    import math
+    val_ds = dataset.val_dataset
+    if val_ds is None or len(val_ds) == 0:
+        return {}
+
+    loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+    total_loss = 0.0
+    total_batches = 0
+
+    brain.eval()
+    with torch.no_grad():
+        for batch in loader:
+            input_ids = batch.input_ids.to(brain.device)
+            attention_mask = batch.attention_mask.to(brain.device)
+            labels = batch.labels.to(brain.device)
+
+            outputs = brain(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels,
+            )
+            if outputs["loss"] is not None:
+                total_loss += outputs["loss"].item()
+                total_batches += 1
+
+    brain.train()
+
+    if total_batches == 0:
+        return {}
+
+    avg_loss = total_loss / total_batches
+    return {"val_loss": avg_loss, "val_perplexity": math.exp(min(avg_loss, 20))}
+
+
 async def training_loop():
     """Background training loop — real forward/backward/optimizer steps."""
     global training_active
@@ -148,7 +184,9 @@ async def training_loop():
     GRAD_ACCUM_STEPS = 4
     LR = 2e-4
     WARMUP_STEPS = 100
-    PHASE_ADVANCE_STEPS = 1000
+    VAL_EVERY_STEPS = 50          # Run validation every N optimizer steps
+    PLATEAU_PATIENCE = 3          # Advance phase after N val checks with no improvement
+    PLATEAU_MIN_DELTA = 0.01      # Minimum improvement to reset patience counter
 
     curriculum = GenerativeCurriculum(teacher, brain.tokenizer)
 
@@ -161,11 +199,16 @@ async def training_loop():
 
     brain.train()
     step = 0
+    optimizer_step = 0
     optimizer.zero_grad()
 
+    best_val_loss = float("inf")
+    plateau_count = 0
+    current_dataset = None
+
     while training_active:
-        dataset = curriculum.generate_phase_batch(batch_size=20)
-        loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+        current_dataset = curriculum.generate_phase_batch(batch_size=20)
+        loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
         for batch in loader:
             if not training_active:
@@ -195,30 +238,56 @@ async def training_loop():
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
+                optimizer_step += 1
 
-            real_loss = (loss * GRAD_ACCUM_STEPS).item()
-            brain.training_history.append({
-                "step": step,
-                "phase": curriculum.phase_names[curriculum.current_phase],
-                "loss": real_loss,
-            })
+                # Validation pass
+                if optimizer_step % VAL_EVERY_STEPS == 0:
+                    val_metrics = _run_validation(current_dataset, BATCH_SIZE)
+                    val_loss = val_metrics.get("val_loss")
 
-            # Checkpoint every 100 optimizer steps
-            if step % (100 * GRAD_ACCUM_STEPS) == 0:
-                knowledge_manager.save_checkpoint(
-                    brain.model.state_dict(),
-                    {
-                        "loss": real_loss,
-                        "step": step,
-                        "phase": curriculum.current_phase,
-                    },
-                )
+                    brain.training_history.append({
+                        "step": optimizer_step,
+                        "phase": curriculum.phase_names[curriculum.current_phase],
+                        "loss": (loss * GRAD_ACCUM_STEPS).item(),
+                        **val_metrics,
+                    })
+
+                    # Plateau detection for phase advancement
+                    if val_loss is not None:
+                        if best_val_loss - val_loss > PLATEAU_MIN_DELTA:
+                            best_val_loss = val_loss
+                            plateau_count = 0
+                        else:
+                            plateau_count += 1
+
+                        if plateau_count >= PLATEAU_PATIENCE:
+                            if curriculum.advance_phase():
+                                best_val_loss = float("inf")
+                                plateau_count = 0
+
+                # Checkpoint every 100 optimizer steps
+                if optimizer_step % 100 == 0:
+                    last = brain.training_history[-1] if brain.training_history else {}
+                    knowledge_manager.save_checkpoint(
+                        brain.model.state_dict(),
+                        {
+                            "loss": last.get("loss"),
+                            "val_loss": last.get("val_loss"),
+                            "val_perplexity": last.get("val_perplexity"),
+                            "step": optimizer_step,
+                            "phase": curriculum.current_phase,
+                        },
+                    )
+
+            else:
+                real_loss = (loss * GRAD_ACCUM_STEPS).item()
+                brain.training_history.append({
+                    "step": optimizer_step,
+                    "phase": curriculum.phase_names[curriculum.current_phase],
+                    "loss": real_loss,
+                })
 
             await asyncio.sleep(0)  # Yield control to event loop
-
-        # Advance curriculum phase based on steps
-        if step >= PHASE_ADVANCE_STEPS * (curriculum.current_phase + 1):
-            curriculum.advance_phase()
 
     brain.eval()
     training_active = False
@@ -234,6 +303,8 @@ async def training_websocket(websocket: WebSocket):
                 last = brain.training_history[-1] if brain.training_history else {}
                 metrics = {
                     "loss": last.get("loss"),
+                    "val_loss": last.get("val_loss"),
+                    "val_perplexity": last.get("val_perplexity"),
                     "phase": last.get("phase"),
                     "step": last.get("step", 0),
                     "examples_processed": len(brain.training_history),
