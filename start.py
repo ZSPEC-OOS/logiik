@@ -12,6 +12,7 @@ Leave this terminal window open while you use NERO.
 Press Ctrl+C to stop.
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -35,14 +36,6 @@ def install_dependencies():
         if result.returncode != 0:
             print("Warning: some packages may not have installed correctly.")
 
-    # Install the nero package itself so 'cognita' is importable
-    print("Installing NERO package…")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-e", str(root)],
-    )
-    if result.returncode != 0:
-        print("Warning: NERO package install had issues.")
-
 
 def wait_for_server(timeout=30):
     import urllib.request, urllib.error
@@ -60,6 +53,9 @@ def main():
     install_dependencies()
 
     print("Starting NERO server…")
+    root = Path(__file__).parent
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(root)
     server = subprocess.Popen(
         [
             sys.executable, "-m", "uvicorn",
@@ -67,7 +63,8 @@ def main():
             "--host", "0.0.0.0",
             "--port", str(PORT),
         ],
-        cwd=Path(__file__).parent,
+        cwd=root,
+        env=env,
     )
 
     print(f"Waiting for server to be ready at {URL} …")
