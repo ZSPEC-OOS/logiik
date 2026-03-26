@@ -79,8 +79,8 @@ async function initializeSystem() {
 
   const msg = document.getElementById('init-msg');
 
-  if (!apiKey || !baseUrl || !model || !topicsRaw.trim()) {
-    msg.textContent = 'API Key, Base URL, Model ID, and Topics are required.';
+  if (!apiKey || !baseUrl || !model) {
+    msg.textContent = 'API Key, Base URL, and Model ID are required.';
     msg.className   = 'init-msg error';
     return;
   }
