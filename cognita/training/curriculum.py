@@ -172,6 +172,7 @@ class GenerativeCurriculum:
     Phase 1: Learn from teacher's Q+A structure (memorization)
     Phase 2: Generate novel answers given questions (generation)
     Phase 3: Synthesize knowledge across domains (abstraction)
+    Phase 4: Demonstrate complete coding understanding across common languages
     """
 
     def __init__(
@@ -179,7 +180,7 @@ class GenerativeCurriculum:
         teacher_orchestrator,
         tokenizer,
         topics_description: str = "",
-        phase_ratios: Tuple[float, float, float] = (0.4, 0.4, 0.2),
+        phase_ratios: Tuple[float, float, float, float] = (0.3, 0.3, 0.2, 0.2),
         phase_topics: Optional[Dict[str, List[str]]] = None,
         topics_per_session: int = 5,
     ):
@@ -188,7 +189,7 @@ class GenerativeCurriculum:
         self.topics_description = topics_description
         self.phase_ratios = phase_ratios
         self.current_phase = 0
-        self.phase_names = ["Memorization", "Generation", "Abstraction"]
+        self.phase_names = ["Memorization", "Generation", "Abstraction", "Coding Mastery"]
         # Keyed by lowercase phase name; each value is an ordered topic list
         self.phase_topics: Dict[str, List[str]] = phase_topics or {}
         self.topics_per_session = topics_per_session
@@ -213,8 +214,10 @@ class GenerativeCurriculum:
         elif self.current_phase == 1:
             topics = self._get_topics()
             examples = self._generate_generative_examples(topics, batch_size)
-        else:
+        elif self.current_phase == 2:
             examples = self._generate_abstraction_examples(batch_size)
+        else:
+            examples = self._generate_coding_mastery_examples(batch_size)
 
         # Deduplicate via Question Bank when provided
         if question_bank is not None and examples:
@@ -280,7 +283,7 @@ class GenerativeCurriculum:
 
     def advance_phase(self):
         """Move to next training phase."""
-        if self.current_phase < 2:
+        if self.current_phase < len(self.phase_names) - 1:
             self.current_phase += 1
             print(
                 f"Advanced to Phase {self.current_phase + 1}: "
@@ -311,5 +314,30 @@ class GenerativeCurriculum:
                 explanation=f"Cross-domain synthesis: {base.explanation}"
             )
             examples.append(cross_domain)
+
+        return examples
+
+    def _generate_coding_mastery_examples(self, count: int) -> List[TrainingExample]:
+        """Generate advanced coding tasks spanning common programming languages."""
+        topics = self._get_topics()
+        examples = []
+
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.9, num_answers=5
+            )
+            coding_mastery = TrainingExample(
+                question=(
+                    f"Coding mastery challenge: {base.question}\n"
+                    "(Demonstrate robust implementation choices across common programming languages)"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.95,
+                domain=f"coding_mastery_{base.domain}",
+                explanation=f"Coding mastery synthesis: {base.explanation}"
+            )
+            examples.append(coding_mastery)
 
         return examples

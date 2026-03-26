@@ -32,14 +32,17 @@ storage:
 curriculum:
   phases:
     - name: "memorization"
-      duration: 0.4   # 40% of training
+      duration: 0.3   # 30% of training
       generative_ratio: 0.1
     - name: "generation"
-      duration: 0.4
+      duration: 0.3
       generative_ratio: 0.5
     - name: "abstraction"
       duration: 0.2
       generative_ratio: 0.8
+    - name: "coding_mastery"
+      duration: 0.2
+      generative_ratio: 0.9
   structure:
     min_answers: 5
     max_answers: 10

@@ -100,7 +100,7 @@ cognita/
 │   ├── brain.py              # Transformer + LoRA + Generative head
 │   └── teacher_interface.py  # OpenAI & Anthropic teacher connectors
 ├── training/
-│   └── curriculum.py         # 3-phase curriculum engine
+│   └── curriculum.py         # 4-phase curriculum engine
 ├── storage/
 │   └── checkpoint_manager.py # Local knowledge base manager
 ├── dashboard/
@@ -132,6 +132,7 @@ knowledge_base/               # Attachable AI knowledge folder
 | 1 | **Memorization** | Learn from teacher's Q+A structure | 10% |
 | 2 | **Generation** | Create original answers | 50% |
 | 3 | **Abstraction** | Cross-domain knowledge synthesis | 80% |
+| 4 | **Coding Mastery** | Complete coding understanding across common languages | 90% |
 
 ## 🏗️ Architecture
 
