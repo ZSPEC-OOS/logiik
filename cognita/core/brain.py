@@ -135,9 +135,42 @@ class NEROBrain(nn.Module):
         labels: Optional[torch.Tensor] = None,
         temperature: float = 2.0
     ) -> torch.Tensor:
-        """KL divergence loss for knowledge distillation with temperature scaling."""
-        soft_targets = nn.functional.softmax(teacher_logits / temperature, dim=-1)
-        soft_prob = nn.functional.log_softmax(student_logits / temperature, dim=-1)
+        """
+        KL divergence loss for knowledge distillation with temperature scaling.
+
+        student_logits: [B, T, V]
+        teacher_logits: [T_ans, V]  — covers only the answer token positions
+
+        We align by selecting only the student positions where labels != -100
+        (i.e. the unmasked answer tokens), then compute KL div position-wise.
+        """
+        # Identify answer positions from labels (not masked with -100)
+        # labels shape: [B, T]; use first item to determine positions (same mask per batch)
+        if labels is not None:
+            answer_mask = (labels[0] != -100)          # [T] bool
+            student_ans = student_logits[:, answer_mask, :]  # [B, T_ans, V]
+        else:
+            # Fallback: align by trimming/padding teacher to student length
+            T = student_logits.shape[1]
+            T_ans = teacher_logits.shape[0]
+            if T_ans >= T:
+                teacher_logits = teacher_logits[:T]
+            else:
+                pad = torch.zeros(T - T_ans, teacher_logits.shape[-1], device=teacher_logits.device)
+                teacher_logits = torch.cat([teacher_logits, pad], dim=0)
+            student_ans = student_logits  # [B, T, V]
+
+        T_ans = teacher_logits.shape[0]
+        # Expand teacher across batch: [B, T_ans, V]
+        teacher_expanded = teacher_logits.unsqueeze(0).expand(student_ans.shape[0], -1, -1)
+        teacher_expanded = teacher_expanded.to(student_ans.device)
+
+        # Flatten to [B*T_ans, V] for kl_div
+        soft_targets = nn.functional.softmax(teacher_expanded / temperature, dim=-1)
+        soft_targets = soft_targets.reshape(-1, soft_targets.shape[-1])
+
+        soft_prob = nn.functional.log_softmax(student_ans / temperature, dim=-1)
+        soft_prob = soft_prob.reshape(-1, soft_prob.shape[-1])
 
         loss = nn.functional.kl_div(
             soft_prob, soft_targets, reduction='batchmean'
