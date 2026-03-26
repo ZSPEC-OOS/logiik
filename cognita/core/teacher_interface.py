@@ -151,17 +151,28 @@ class TeacherOrchestrator:
         examples_per_topic: int = 10,
         difficulty_progression: bool = True
     ) -> List[TrainingExample]:
-        """Generate a structured curriculum with progressive difficulty."""
-        batch = []
+        """Generate a structured curriculum — all topic/example pairs in parallel."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        for topic in topics:
-            for i in range(examples_per_topic):
-                difficulty = (i / examples_per_topic) if difficulty_progression else 0.5
-                example = self.teachers[0].generate_training_example(
-                    topic=topic,
-                    difficulty=difficulty,
-                    num_answers=min(5 + int(difficulty * 5), 10)  # 5-10 answers based on difficulty
-                )
+        def _make_example(topic, i):
+            difficulty = (i / examples_per_topic) if difficulty_progression else 0.5
+            return self.teachers[0].generate_training_example(
+                topic=topic,
+                difficulty=difficulty,
+                num_answers=min(5 + int(difficulty * 5), 10),
+            )
+
+        tasks = [
+            (topic, i)
+            for topic in topics
+            for i in range(examples_per_topic)
+        ]
+
+        batch = []
+        with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+            futures = {pool.submit(_make_example, t, i): (t, i) for t, i in tasks}
+            for future in as_completed(futures):
+                example = future.result()
                 batch.append(example)
                 self.generated_examples.append(example)
 
