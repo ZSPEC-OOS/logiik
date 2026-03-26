@@ -151,16 +151,26 @@ class TeacherOrchestrator:
         examples_per_topic: int = 10,
         difficulty_progression: bool = True
     ) -> List[TrainingExample]:
-        """Generate a structured curriculum — all topic/example pairs in parallel."""
+        """Generate a structured curriculum — up to 2 calls in parallel with rate-limit retry."""
+        import time
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         def _make_example(topic, i):
             difficulty = (i / examples_per_topic) if difficulty_progression else 0.5
-            return self.teachers[0].generate_training_example(
-                topic=topic,
-                difficulty=difficulty,
-                num_answers=min(5 + int(difficulty * 5), 10),
-            )
+            for attempt in range(6):
+                try:
+                    return self.teachers[0].generate_training_example(
+                        topic=topic,
+                        difficulty=difficulty,
+                        num_answers=min(5 + int(difficulty * 5), 10),
+                    )
+                except Exception as e:
+                    if '429' in str(e) or 'rate_limit' in str(e).lower():
+                        wait = min(2 ** attempt, 30)
+                        time.sleep(wait)
+                    else:
+                        raise
+            raise RuntimeError(f"Rate limit retry exhausted for topic: {topic}")
 
         tasks = [
             (topic, i)
@@ -169,7 +179,7 @@ class TeacherOrchestrator:
         ]
 
         batch = []
-        with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {pool.submit(_make_example, t, i): (t, i) for t, i in tasks}
             for future in as_completed(futures):
                 example = future.result()
