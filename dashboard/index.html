@@ -3,147 +3,225 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NERO — Training Dashboard</title>
+  <title>NERO — Control Panel</title>
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="layout">
 
-    <!-- Sidebar -->
+    <!-- ── Sidebar ─────────────────────────────────────────── -->
     <aside class="sidebar">
-      <div class="logo">🧠 <span>NERO</span></div>
+      <div class="logo">NERO</div>
 
       <section class="sidebar-section">
-        <h3>Training Controls</h3>
-        <button id="btn-start" class="btn btn-primary" onclick="startTraining()">▶ Start Training</button>
-        <button id="btn-stop" class="btn" onclick="stopTraining()">⏸ Pause</button>
+        <h3>System</h3>
+        <div id="init-state" class="init-state uninit">Not initialized</div>
+        <button class="btn btn-primary" onclick="showTab('setup', document.querySelector('[data-tab=setup]'))">
+          ⚙ Setup &amp; Initialize
+        </button>
       </section>
 
       <section class="sidebar-section">
-        <h3>Teacher API</h3>
-        <label>Model
-          <select id="teacher-model">
-            <option>GPT-4</option>
-            <option>Claude 3 Opus</option>
-            <option>Custom API</option>
-          </select>
-        </label>
-        <label>Examples / Batch
-          <input type="range" id="batch-size" min="5" max="50" value="20"
-                 oninput="document.getElementById('batch-val').textContent=this.value" />
-          <span id="batch-val">20</span>
-        </label>
-        <label>Learning Rate
-          <input type="range" id="lr" min="1" max="100" value="10"
-                 oninput="document.getElementById('lr-val').textContent=(this.value/10000).toFixed(4)" />
-          <span id="lr-val">0.0010</span>
-        </label>
+        <h3>Training</h3>
+        <button id="btn-start" class="btn btn-green" onclick="startTraining()" disabled>▶ Start Training</button>
+        <button id="btn-stop"  class="btn btn-red"   onclick="stopTraining()"  disabled>⏹ Stop Training</button>
       </section>
 
       <section class="sidebar-section">
-        <h3>Knowledge Base</h3>
+        <h3>Knowledge</h3>
         <button class="btn" onclick="exportKnowledge()">📥 Export Package</button>
       </section>
 
       <div id="status-badge" class="status-badge idle">● Idle</div>
     </aside>
 
-    <!-- Main -->
+    <!-- ── Main ───────────────────────────────────────────── -->
     <main class="main">
+
       <header class="page-header">
-        <h1>NERO Training Dashboard</h1>
-        <div id="last-updated" class="last-updated"></div>
+        <h1>NERO Control Panel</h1>
+        <div id="last-updated" class="last-updated">—</div>
       </header>
 
-      <!-- Metric cards -->
-      <div class="metrics-row" id="metrics-row">
+      <!-- Metric strip -->
+      <div class="metrics-row">
         <div class="card metric-card">
-          <div class="metric-label">📚 Training Examples</div>
-          <div class="metric-value" id="m-examples">—</div>
-          <div class="metric-delta" id="m-examples-d"></div>
+          <div class="metric-label">Optimizer Step</div>
+          <div class="metric-value" id="m-step">—</div>
+          <div class="metric-delta" id="m-step-d"></div>
         </div>
         <div class="card metric-card">
-          <div class="metric-label">🎯 Accuracy</div>
-          <div class="metric-value" id="m-accuracy">—</div>
-          <div class="metric-delta" id="m-accuracy-d"></div>
+          <div class="metric-label">Train Loss</div>
+          <div class="metric-value" id="m-loss">—</div>
+          <div class="metric-delta" id="m-loss-d"></div>
         </div>
         <div class="card metric-card">
-          <div class="metric-label">💾 Knowledge Size</div>
-          <div class="metric-value" id="m-size">—</div>
-          <div class="metric-delta" id="m-size-d"></div>
+          <div class="metric-label">Val Loss</div>
+          <div class="metric-value" id="m-vloss">—</div>
+          <div class="metric-delta" id="m-vloss-d"></div>
         </div>
         <div class="card metric-card">
-          <div class="metric-label">📦 Checkpoints</div>
-          <div class="metric-value" id="m-checkpoints">—</div>
-          <div class="metric-delta" id="m-checkpoints-d"></div>
+          <div class="metric-label">Val Perplexity</div>
+          <div class="metric-value" id="m-ppl">—</div>
+          <div class="metric-delta" id="m-ppl-d"></div>
+        </div>
+        <div class="card metric-card">
+          <div class="metric-label">Checkpoints</div>
+          <div class="metric-value" id="m-ckpt">—</div>
+          <div class="metric-delta" id="m-ckpt-d"></div>
         </div>
       </div>
 
       <!-- Tabs -->
       <div class="tabs">
-        <button class="tab active" onclick="showTab('monitor', this)">📈 Monitor</button>
-        <button class="tab" onclick="showTab('knowledge', this)">🧠 Knowledge</button>
-        <button class="tab" onclick="showTab('test', this)">💬 Test AI</button>
+        <button class="tab active" data-tab="setup"     onclick="showTab('setup',    this)">⚙ Setup</button>
+        <button class="tab"        data-tab="monitor"   onclick="showTab('monitor',  this)">📈 Monitor</button>
+        <button class="tab"        data-tab="knowledge" onclick="showTab('knowledge',this)">🗄 Knowledge</button>
+        <button class="tab"        data-tab="test"      onclick="showTab('test',     this)">💬 Test AI</button>
       </div>
 
-      <!-- Tab: Monitor -->
-      <div id="tab-monitor" class="tab-panel active">
-        <div class="card" style="margin-bottom:1.5rem;">
-          <h2>Training Curriculum</h2>
+      <!-- ── Tab: Setup ──────────────────────────────────── -->
+      <div id="tab-setup" class="tab-panel active">
+        <div class="card">
+          <h2>Initialize NERO System</h2>
+          <p class="muted" style="margin-bottom:1.5rem; font-size:.85rem;">
+            Configure the Kimi K2.5 teacher connection and training parameters, then click Initialize.
+          </p>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Teacher API Key <span class="req">*</span></label>
+              <input id="f-apikey" type="password" placeholder="sk-…" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label>Teacher Base URL <span class="req">*</span></label>
+              <input id="f-baseurl" type="text" placeholder="https://api.moonshot.cn/v1" />
+            </div>
+            <div class="form-group">
+              <label>Model ID <span class="req">*</span></label>
+              <input id="f-model" type="text" placeholder="kimi-k2-5" />
+            </div>
+            <div class="form-group">
+              <label>Brain ID</label>
+              <input id="f-brainid" type="text" value="default" />
+            </div>
+            <div class="form-group">
+              <label>Knowledge Base Path</label>
+              <input id="f-kbpath" type="text" value="./knowledge_base" />
+            </div>
+            <div class="form-group">
+              <label>Total Examples</label>
+              <input id="f-examples" type="number" value="100" min="10" max="10000" />
+            </div>
+            <div class="form-group form-group-full">
+              <label>Training Topics <span class="req">*</span>
+                <span class="hint">— one per line or comma-separated</span>
+              </label>
+              <textarea id="f-topics" rows="4"
+                placeholder="basic_reasoning&#10;fact_recall&#10;pattern_matching&#10;creative_writing"></textarea>
+            </div>
+            <div class="form-group form-group-full">
+              <label>Firebase Credential Path
+                <span class="hint">— optional, leave blank for local-only</span>
+              </label>
+              <input id="f-firebase" type="text" placeholder="/path/to/serviceAccount.json" />
+            </div>
+          </div>
+
+          <div style="margin-top:1.5rem; display:flex; gap:.75rem; align-items:center;">
+            <button class="btn btn-primary btn-wide" onclick="initializeSystem()">⚡ Initialize System</button>
+            <span id="init-msg" class="init-msg"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tab: Monitor ────────────────────────────────── -->
+      <div id="tab-monitor" class="tab-panel">
+
+        <!-- Phase tracker -->
+        <div class="card" style="margin-bottom:1.25rem;">
+          <h2>Curriculum Phase</h2>
           <div class="phases" id="phases"></div>
         </div>
+
+        <!-- Charts -->
+        <div class="card" style="margin-bottom:1.25rem;">
+          <h2>Loss Curves</h2>
+          <div id="chart-loss"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:1.25rem;">
+          <h2>Validation Perplexity</h2>
+          <div id="chart-ppl"></div>
+        </div>
+
+        <!-- Live log -->
         <div class="card">
-          <h2>Live Metrics</h2>
-          <div id="charts"></div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.75rem;">
+            <h2 style="margin:0;">Training Log</h2>
+            <button class="btn btn-sm" onclick="clearLog()">Clear</button>
+          </div>
+          <div id="log-panel" class="log-panel"></div>
         </div>
       </div>
 
-      <!-- Tab: Knowledge -->
+      <!-- ── Tab: Knowledge ──────────────────────────────── -->
       <div id="tab-knowledge" class="tab-panel">
         <div class="card">
-          <h2>Knowledge Base Explorer</h2>
+          <h2>Knowledge Base</h2>
           <div class="two-col">
             <div>
-              <h3>Folders</h3>
-              <div id="kb-folders"><p class="muted">Loading…</p></div>
+              <h3>Storage</h3>
+              <div id="kb-folders"><p class="muted">Not loaded.</p></div>
             </div>
             <div>
-              <h3>Recent Examples</h3>
-              <table class="data-table" id="examples-table">
-                <thead><tr><th>Question</th><th>Type</th><th>Difficulty</th><th>Score</th></tr></thead>
-                <tbody>
-                  <tr><td>What causes ocean tides?</td><td>Fact</td><td>Easy</td><td><div class="bar"><div style="width:95%"></div></div> 95%</td></tr>
-                  <tr><td>Explain quantum entanglement</td><td>Concept</td><td>Hard</td><td><div class="bar"><div style="width:72%"></div></div> 72%</td></tr>
-                  <tr><td>Write a creative story opening</td><td>Generation</td><td>Medium</td><td><div class="bar"><div style="width:88%"></div></div> 88%</td></tr>
-                </tbody>
-              </table>
+              <h3>Latest Checkpoint</h3>
+              <div id="kb-latest"><p class="muted">No checkpoints yet.</p></div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Tab: Test AI -->
+      <!-- ── Tab: Test AI ────────────────────────────────── -->
       <div id="tab-test" class="tab-panel">
         <div class="card">
           <h2>Test NERO</h2>
+          <p class="muted" style="margin-bottom:1rem; font-size:.85rem;">
+            Ask the trained model a question. Brain must be initialized.
+          </p>
           <textarea id="question-input" rows="4"
-            placeholder="Ask your trained AI a question…"></textarea>
-          <button class="btn btn-primary" style="margin-top:.75rem;"
-                  onclick="askAI()">🚀 Generate Response</button>
+            placeholder="Ask NERO a question…"></textarea>
+          <div style="display:flex; gap:.75rem; margin-top:.75rem; align-items:center;">
+            <button class="btn btn-primary" style="width:auto; padding:.55rem 1.5rem;"
+                    onclick="askAI()">Generate Response</button>
+            <label class="checkbox-label">
+              <input type="checkbox" id="require-original" checked />
+              Require original answer
+            </label>
+          </div>
 
           <div id="response-area" style="display:none; margin-top:1.5rem;">
             <div class="response-box" id="response-text"></div>
             <div class="response-metrics">
-              <div class="r-metric"><span class="r-label">Confidence</span><span id="r-conf" class="r-val">—</span></div>
-              <div class="r-metric"><span class="r-label">Originality</span><span id="r-orig" class="r-val">—</span></div>
-              <div class="r-metric"><span class="r-label">Tokens</span><span id="r-tok" class="r-val">—</span></div>
+              <div class="r-metric">
+                <span class="r-label">Confidence</span>
+                <span id="r-conf" class="r-val">—</span>
+              </div>
+              <div class="r-metric">
+                <span class="r-label">Original</span>
+                <span id="r-orig" class="r-val">—</span>
+              </div>
+              <div class="r-metric">
+                <span class="r-label">Tokens</span>
+                <span id="r-tok" class="r-val">—</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <footer>NERO v1.0 &bull; <a href="https://github.com/zspec-oos/logik2" target="_blank">GitHub</a></footer>
+      <footer>NERO v2.0</footer>
     </main>
   </div>
 
