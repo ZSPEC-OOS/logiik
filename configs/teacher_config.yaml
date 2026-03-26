@@ -11,7 +11,7 @@ teacher:
     max_tokens: 500
     response_format: "json"
   curriculum:
-    topics_per_session: 5
+    topics_per_session: 1
     examples_per_topic: 20
     difficulty_range: [0.1, 0.9]
   evaluation:
