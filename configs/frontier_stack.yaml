@@ -1,0 +1,53 @@
+# NERO Frontier-Aligned Stack Configuration
+# March 2026 baseline profile for local/hybrid operation.
+
+runtime:
+  backend: "ollama"   # ollama | vllm
+  openai_compatible_base_url: "http://localhost:8000/v1"
+  ollama:
+    host: "http://localhost:11434"
+    primary_model: "llama4:maverick"
+    secondary_model: "deepseek-v3.2"
+  vllm:
+    model: "meta-llama/Llama-4-Maverick"
+    tensor_parallel_size: 4
+    quantization: "awq"
+    max_model_len: 10000000
+    enable_auto_tool_choice: true
+
+context:
+  target_window_tokens: 128000
+  stretch_window_tokens: 10000000
+  retrieval_top_k: 10
+
+agentic:
+  orchestrator: "langgraph"
+  checkpointer: "sqlite"
+  agents:
+    - name: "researcher"
+      role: "Aging literature synthesis and hypothesis generation"
+    - name: "coder"
+      role: "Bioinformatics implementation and validation"
+    - name: "biologist"
+      role: "Pathway review and intervention plausibility checks"
+
+rag:
+  enabled: true
+  corpus_path: "./knowledge_base/aging_papers"
+  vector_store: "chroma"
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+specialization:
+  method: "lora"
+  lora_r: 16
+  lora_alpha: 32
+  sequence_len: 131072
+  datasets:
+    - "./knowledge_base/training_data/aging_papers.jsonl"
+    - "./knowledge_base/training_data/coding_traces.jsonl"
+
+validation:
+  targets:
+    swe_bench_verified: ">=70"
+    livecodebench: ">=80"
+    gpqa_diamond: "track"

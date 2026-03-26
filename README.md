@@ -10,6 +10,7 @@ A complete AI training framework implementing modern teacher-student architectur
 - **Local Knowledge Base**: All learning stored in attachable `knowledge_base/` folder
 - **Real-time Dashboard**: Beautiful Streamlit interface for monitoring training
 - **REST API + WebSocket**: FastAPI server for training control and live updates
+- **Frontier Migration Kit (March 2026)**: MoE-ready self-hosted runtime + LangGraph orchestration for coding and biological aging discovery
 
 ## 🚀 Quick Start
 
@@ -27,6 +28,56 @@ python -m cognita.api.server
 # Launch dashboard (new terminal)
 streamlit run cognita/dashboard/app.py
 ```
+
+## ⚙️ Frontier Migration Protocol (NERO)
+
+Use this path to upgrade NERO from legacy dense local models to a frontier-aligned open-weight MoE architecture.
+
+### 1) Run migration bootstrap
+
+```bash
+bash scripts/migrate_frontier_stack.sh
+# Optional: fetch large model weights too
+bash scripts/migrate_frontier_stack.sh --with-ollama-pull
+```
+
+This script backs up the current repo, installs vLLM/LangGraph/LlamaIndex dependencies, installs CUDA 12.4 PyTorch wheels, and prepares Ollama model runtime.
+
+### 2) Review migration config
+
+- Main profile: `configs/frontier_stack.yaml`
+- Set backend (`ollama` or `vllm`), context goals (128K–10M), agent roles, RAG corpus path, and LoRA specialization settings.
+
+### 3) Start a frontier inference backend
+
+**Ollama path (simplest):**
+```bash
+ollama serve
+```
+
+**vLLM path (higher throughput):**
+```bash
+docker compose up vllm
+# OpenAI-compatible endpoint on http://localhost:8001/v1
+```
+
+### 4) Run stateful agentic workflow
+
+```bash
+python -m cognita.orchestration.bio_coding_graph
+```
+
+This runs a dual-agent (researcher + coder) LangGraph cycle for biological-aging hypothesis synthesis and code planning.
+
+### 5) Add RAG corpus
+
+Place papers/notes under:
+
+```text
+knowledge_base/aging_papers/
+```
+
+Then wire your query engine in orchestration nodes (placeholder hooks are included).
 
 ## 🐳 Docker
 
@@ -54,12 +105,18 @@ cognita/
 │   └── checkpoint_manager.py # Local knowledge base manager
 ├── dashboard/
 │   └── app.py                # Streamlit real-time dashboard
+├── orchestration/
+│   └── bio_coding_graph.py   # LangGraph workflow for coding + aging
 └── api/
     └── server.py             # FastAPI + WebSocket server
 
 configs/
 ├── model_config.yaml         # Model & training hyperparameters
-└── teacher_config.yaml       # Teacher API configuration
+├── teacher_config.yaml       # Teacher API configuration
+└── frontier_stack.yaml       # Frontier migration target profile
+
+scripts/
+└── migrate_frontier_stack.sh # One-shot migration bootstrap
 
 knowledge_base/               # Attachable AI knowledge folder
 ├── embeddings/               # Vector representations for RAG
