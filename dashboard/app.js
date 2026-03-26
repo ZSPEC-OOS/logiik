@@ -321,6 +321,13 @@ function connectWS() {
       _updateLogsSummary(m.bank_count, m.toss_count, m.repeat_threshold, m.training_complete);
     }
 
+    // Training error
+    if (m.training_error && m.training_error !== state.lastTrainingError) {
+      state.lastTrainingError = m.training_error;
+      addLog('error', `Training crashed: ${m.training_error.split('\n')[0]}`);
+      setStatus('Error', 'error');
+    }
+
     // Training complete
     if (m.training_complete && !state.trainingComplete) {
       state.trainingComplete = true;
