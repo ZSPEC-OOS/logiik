@@ -10,10 +10,12 @@ case "$SERVICE" in
     ;;
   dashboard)
     echo "Starting Cognita Dashboard..."
-    exec streamlit run cognita/dashboard/app.py \
-      --server.port 8501 \
-      --server.address 0.0.0.0 \
-      --server.headless true
+    if [ -d "dashboard" ]; then
+      exec python -m http.server 8501 --bind 0.0.0.0 --directory dashboard
+    else
+      echo "Dashboard assets not found at /app/dashboard"
+      exit 1
+    fi
     ;;
   *)
     echo "Unknown service: $SERVICE. Use SERVICE=api or SERVICE=dashboard"
