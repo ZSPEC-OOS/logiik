@@ -135,6 +135,8 @@ knowledge_base/               # Attachable AI knowledge folder
 | 4 | **Coding Mastery** | Complete coding understanding across common languages | 90% |
 | 5 | **Drosophila AI Framework** | Specialized framework design for Drosophila genetics with axon guidance and neural wiring focus | 95% |
 
+See `docs/PHASE_CURRICULUM_REVIEW.md` for a detailed readiness review and a recommended 7-phase progression that adds two bridge phases before advanced coding/scientific specialization.
+
 ## 🏗️ Architecture
 
 ```
