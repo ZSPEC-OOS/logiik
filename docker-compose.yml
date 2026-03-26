@@ -10,9 +10,37 @@ services:
       - ./dashboard:/app/dashboard
     environment:
       - TEACHER_API_KEY=${TEACHER_API_KEY}
+      - NERO_OPENAI_BASE_URL=${NERO_OPENAI_BASE_URL:-http://vllm:8000/v1}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Optional frontier-grade inference backend.
+  # Enable with: docker compose up vllm
+  vllm:
+    image: vllm/vllm-openai:latest
+    command:
+      - --model
+      - ${VLLM_MODEL:-meta-llama/Llama-4-Maverick}
+      - --tensor-parallel-size
+      - ${VLLM_TP_SIZE:-1}
+      - --quantization
+      - ${VLLM_QUANTIZATION:-awq}
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-131072}
+      - --enable-auto-tool-choice
+    ports:
+      - "8001:8000"
+    ipc: host
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${VLLM_GPU_COUNT:-1}
+              capabilities: [gpu]
