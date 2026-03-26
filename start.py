@@ -25,27 +25,23 @@ URL  = f"http://localhost:{PORT}"
 def install_dependencies():
     root = Path(__file__).parent
 
-    # Install third-party requirements
+    # Install third-party requirements (no -q so progress is visible)
     req = root / "requirements.txt"
     if req.exists():
-        print("Checking dependencies…")
+        print("Installing dependencies (this can take several minutes the first time)…")
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-r", str(req), "-q"],
-            capture_output=True,
+            [sys.executable, "-m", "pip", "install", "-r", str(req)],
         )
         if result.returncode != 0:
             print("Warning: some packages may not have installed correctly.")
-            print(result.stderr.decode())
 
     # Install the nero package itself so 'cognita' is importable
     print("Installing NERO package…")
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-e", str(root), "-q"],
-        capture_output=True,
+        [sys.executable, "-m", "pip", "install", "-e", str(root)],
     )
     if result.returncode != 0:
         print("Warning: NERO package install had issues.")
-        print(result.stderr.decode())
 
 
 def wait_for_server(timeout=30):
