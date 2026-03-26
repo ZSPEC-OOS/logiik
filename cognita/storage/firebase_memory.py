@@ -1,67 +1,83 @@
 """
 Firebase Memory Sync - Cloud persistence for NERO memory.
 
-What lives where:
-  LOCAL  (knowledge_base/) - model weights (.pt), embedding vectors (.npy)
-  FIREBASE (Firestore)     - knowledge index, training metadata, session history,
-                             embedding metadata, checkpoint stats
+Uses the Firestore REST API — no service account or SDK init required.
+Only lightweight structured metadata goes to the cloud; binary data
+(model weights, vectors) stays in the local knowledge-base folder.
+
+Firestore layout:
+  nero/memory                     — root index document
+  nero/memory/checkpoints/{name}  — one doc per checkpoint
+  nero/memory/sessions/{name}     — one doc per training session
+  nero/memory/embeddings/{name}   — embedding metadata (not vectors)
 """
-import json
+import requests
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import firebase_admin
-from firebase_admin import credentials, firestore
+# ── Hardcoded Firebase project config ─────────────────────────────────
+_PROJECT  = "nero-85ed0"
+_API_KEY  = "AIzaSyAD1Lu8bT5VTZC2k4suWk_X2FfSW9H-fUI"
+_BASE_URL = (
+    f"https://firestore.googleapis.com/v1"
+    f"/projects/{_PROJECT}/databases/(default)/documents"
+)
+
+
+# ── Firestore value encoding/decoding ─────────────────────────────────
+
+def _enc(value) -> dict:
+    """Python value → Firestore typed field dict."""
+    if value is None:
+        return {"nullValue": None}
+    if isinstance(value, bool):
+        return {"booleanValue": value}
+    if isinstance(value, int):
+        return {"integerValue": str(value)}
+    if isinstance(value, float):
+        return {"doubleValue": value}
+    if isinstance(value, str):
+        return {"stringValue": value}
+    if isinstance(value, list):
+        return {"arrayValue": {"values": [_enc(v) for v in value]}}
+    if isinstance(value, dict):
+        return {"mapValue": {"fields": {k: _enc(v) for k, v in value.items()}}}
+    return {"stringValue": str(value)}
+
+
+def _dec(field: dict):
+    """Firestore typed field dict → Python value."""
+    if "nullValue"    in field: return None
+    if "booleanValue" in field: return field["booleanValue"]
+    if "integerValue" in field: return int(field["integerValue"])
+    if "doubleValue"  in field: return field["doubleValue"]
+    if "stringValue"  in field: return field["stringValue"]
+    if "arrayValue"   in field:
+        return [_dec(v) for v in field["arrayValue"].get("values", [])]
+    if "mapValue"     in field:
+        return {k: _dec(v) for k, v in field["mapValue"].get("fields", {}).items()}
+    return None
+
+
+def _doc_to_dict(doc: dict) -> dict:
+    return {k: _dec(v) for k, v in doc.get("fields", {}).items()}
+
+
+def _dict_to_body(data: dict) -> dict:
+    return {"fields": {k: _enc(v) for k, v in data.items()}}
 
 
 class FirebaseMemory:
-    """
-    Syncs NERO's memory metadata to Firestore.
-    Binary brain data (weights, vectors) stays local — only
-    lightweight structured memory goes to the cloud.
+    """Syncs NERO memory metadata to Firestore via REST API."""
 
-    Firestore collections:
-      nero/{brain_id}/index          - knowledge index document
-      nero/{brain_id}/checkpoints    - one doc per checkpoint
-      nero/{brain_id}/sessions       - one doc per training session
-      nero/{brain_id}/embeddings     - embedding metadata (not vectors)
-    """
+    _ROOT = f"{_BASE_URL}/nero/memory"
 
-    def __init__(
-        self,
-        brain_id: str = "default",
-        credential_path: Optional[str] = None,
-    ):
-        """
-        Args:
-            brain_id: Unique identifier for this brain instance.
-                      Allows multiple brains in the same Firebase project.
-            credential_path: Path to Firebase service account JSON.
-                             Falls back to GOOGLE_APPLICATION_CREDENTIALS env var
-                             or Application Default Credentials.
-        """
-        self.brain_id = brain_id
+    def __init__(self):
+        self._p = {"key": _API_KEY}  # query-string params for all requests
 
-        if not firebase_admin._apps:
-            cred = (
-                credentials.Certificate(credential_path)
-                if credential_path
-                else credentials.ApplicationDefault()
-            )
-            firebase_admin.initialize_app(cred)
+    # ── Internal helpers ───────────────────────────────────────────────
 
-        self.db = firestore.client()
-        self._root = self.db.collection("nero").document(brain_id)
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _col(self, name: str):
-        return self._root.collection(name)
-
-    def _sanitize(self, data: Dict) -> Dict:
-        """Remove non-serializable values (tensors, ndarrays, Path objects)."""
+    def _sanitize(self, data: dict) -> dict:
         clean = {}
         for k, v in data.items():
             if isinstance(v, (str, int, float, bool, list, dict)) or v is None:
@@ -70,102 +86,102 @@ class FirebaseMemory:
                 clean[k] = str(v)
         return clean
 
-    # ------------------------------------------------------------------
-    # Index
-    # ------------------------------------------------------------------
+    def _get(self, url: str) -> Optional[dict]:
+        try:
+            r = requests.get(url, params=self._p, timeout=10)
+            return r.json() if r.status_code == 200 else None
+        except Exception:
+            return None
 
-    def sync_index(self, index: Dict[str, Any]):
-        """Push the full knowledge index to Firestore."""
-        self._root.set(self._sanitize({
+    def _patch(self, url: str, data: dict) -> bool:
+        try:
+            r = requests.patch(url, params=self._p,
+                               json=_dict_to_body(data), timeout=10)
+            return r.status_code in (200, 201)
+        except Exception:
+            return False
+
+    def _delete(self, url: str) -> bool:
+        try:
+            r = requests.delete(url, params=self._p, timeout=10)
+            return r.status_code in (200, 204)
+        except Exception:
+            return False
+
+    def _list(self, url: str) -> List[dict]:
+        try:
+            r = requests.get(url, params=self._p, timeout=10)
+            if r.status_code != 200:
+                return []
+            return [_doc_to_dict(d) for d in r.json().get("documents", [])]
+        except Exception:
+            return []
+
+    # ── Index ──────────────────────────────────────────────────────────
+
+    def sync_index(self, index: dict):
+        self._patch(self._ROOT, self._sanitize({
             **index,
-            "brain_id": self.brain_id,
             "last_synced": datetime.utcnow().isoformat(),
-        }), merge=True)
+        }))
 
-    def get_index(self) -> Optional[Dict]:
-        """Fetch the knowledge index from Firestore."""
-        doc = self._root.get()
-        return doc.to_dict() if doc.exists else None
+    def get_index(self) -> Optional[dict]:
+        doc = self._get(self._ROOT)
+        return _doc_to_dict(doc) if doc else None
 
-    # ------------------------------------------------------------------
-    # Checkpoints
-    # ------------------------------------------------------------------
+    # ── Checkpoints ────────────────────────────────────────────────────
 
-    def push_checkpoint(self, name: str, stats: Dict[str, Any]):
-        """Record a checkpoint (stats only, not weights)."""
-        self._col("checkpoints").document(name).set(self._sanitize({
+    def push_checkpoint(self, name: str, stats: dict):
+        self._patch(f"{self._ROOT}/checkpoints/{name}", self._sanitize({
             "name": name,
-            "brain_id": self.brain_id,
             "timestamp": datetime.utcnow().isoformat(),
             **stats,
         }))
 
-    def list_checkpoints(self) -> List[Dict]:
-        """Return all checkpoint records ordered by timestamp."""
-        docs = self._col("checkpoints").order_by("timestamp").stream()
-        return [d.to_dict() for d in docs]
+    def list_checkpoints(self) -> List[dict]:
+        docs = self._list(f"{self._ROOT}/checkpoints")
+        return sorted(docs, key=lambda d: d.get("timestamp", ""))
 
     def delete_checkpoint(self, name: str):
-        """Remove a checkpoint record from Firestore."""
-        self._col("checkpoints").document(name).delete()
+        self._delete(f"{self._ROOT}/checkpoints/{name}")
 
-    # ------------------------------------------------------------------
-    # Training sessions
-    # ------------------------------------------------------------------
+    # ── Training sessions ──────────────────────────────────────────────
 
-    def push_session(self, name: str, session_data: Dict[str, Any]):
-        """Record a training session."""
-        self._col("sessions").document(name).set(self._sanitize({
+    def push_session(self, name: str, session_data: dict):
+        self._patch(f"{self._ROOT}/sessions/{name}", self._sanitize({
             "name": name,
-            "brain_id": self.brain_id,
             "timestamp": datetime.utcnow().isoformat(),
             **session_data,
         }))
 
-    def list_sessions(self, limit: int = 50) -> List[Dict]:
-        """Return recent training sessions."""
-        docs = (
-            self._col("sessions")
-            .order_by("timestamp", direction=firestore.Query.DESCENDING)
-            .limit(limit)
-            .stream()
-        )
-        return [d.to_dict() for d in docs]
+    def list_sessions(self, limit: int = 50) -> List[dict]:
+        docs = self._list(f"{self._ROOT}/sessions")
+        return sorted(docs, key=lambda d: d.get("timestamp", ""), reverse=True)[:limit]
 
-    # ------------------------------------------------------------------
-    # Embedding metadata (vectors stay local)
-    # ------------------------------------------------------------------
+    # ── Embedding metadata ─────────────────────────────────────────────
 
-    def push_embedding_meta(self, name: str, shape: List[int], count: int, extra: Dict = None):
-        """Record embedding metadata — vectors themselves stay local."""
-        self._col("embeddings").document(name).set(self._sanitize({
+    def push_embedding_meta(self, name: str, shape: List[int], count: int,
+                             extra: dict = None):
+        self._patch(f"{self._ROOT}/embeddings/{name}", self._sanitize({
             "name": name,
-            "brain_id": self.brain_id,
             "shape": shape,
             "count": count,
             "timestamp": datetime.utcnow().isoformat(),
             **(extra or {}),
         }))
 
-    def list_embeddings(self) -> List[Dict]:
-        """Return all embedding metadata records."""
-        docs = self._col("embeddings").stream()
-        return [d.to_dict() for d in docs]
+    def list_embeddings(self) -> List[dict]:
+        return self._list(f"{self._ROOT}/embeddings")
 
-    # ------------------------------------------------------------------
-    # Convenience
-    # ------------------------------------------------------------------
+    # ── Summary ────────────────────────────────────────────────────────
 
-    def get_summary(self) -> Dict:
-        """High-level memory summary from Firestore."""
+    def get_summary(self) -> dict:
         checkpoints = self.list_checkpoints()
-        sessions = self.list_sessions()
-        embeddings = self.list_embeddings()
-
+        sessions    = self.list_sessions()
+        embeddings  = self.list_embeddings()
         return {
-            "brain_id": self.brain_id,
             "checkpoints_count": len(checkpoints),
-            "sessions_count": len(sessions),
-            "embeddings_count": len(embeddings),
+            "sessions_count":    len(sessions),
+            "embeddings_count":  len(embeddings),
             "latest_checkpoint": checkpoints[-1] if checkpoints else None,
         }

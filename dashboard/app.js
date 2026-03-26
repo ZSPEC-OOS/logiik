@@ -54,19 +54,28 @@ function fmt(n, decimals = 4) {
 }
 
 /* ─── Initialize system ──────────────────────────────────────── */
+async function browseFolder() {
+  try {
+    const res  = await fetch(`${API}/browse-folder`);
+    const data = await res.json();
+    if (data.path) {
+      document.getElementById('f-kbpath').value = data.path;
+      localStorage.setItem('nero-kbpath', data.path);
+    }
+  } catch {
+    alert('Could not open folder picker. Is the NERO server running?');
+  }
+}
+
 async function initializeSystem() {
-  const apiKey   = document.getElementById('f-apikey').value.trim();
-  const baseUrl  = document.getElementById('f-baseurl').value.trim();
-  const model    = document.getElementById('f-model').value.trim();
-  const topicsRaw= document.getElementById('f-topics').value.trim();
-  const kbPath   = document.getElementById('f-kbpath').value.trim();
-  const brainId  = document.getElementById('f-brainid').value.trim();
-  const totalEx  = parseInt(document.getElementById('f-examples').value, 10);
-  const firebase = document.getElementById('f-firebase').value.trim();
+  const apiKey    = document.getElementById('f-apikey').value.trim();
+  const baseUrl   = document.getElementById('f-baseurl').value.trim();
+  const model     = document.getElementById('f-model').value.trim();
+  const topicsRaw = document.getElementById('f-topics').value.trim();
+  const kbPath    = document.getElementById('f-kbpath').value.trim() || './knowledge_base';
+  const threshold = parseInt(document.getElementById('f-threshold').value, 10);
 
   const msg = document.getElementById('init-msg');
-
-  const threshold = parseInt(document.getElementById('f-threshold').value, 10);
 
   if (!apiKey || !baseUrl || !model || !topicsRaw.trim()) {
     msg.textContent = 'API Key, Base URL, Model ID, and Topics are required.';
@@ -78,16 +87,13 @@ async function initializeSystem() {
   msg.className   = 'init-msg pending';
 
   const payload = {
-    teacher_api_key:          apiKey,
-    teacher_base_url:         baseUrl,
-    teacher_model:            model,
-    topics_description:       topicsRaw.trim(),
+    teacher_api_key:           apiKey,
+    teacher_base_url:          baseUrl,
+    teacher_model:             model,
+    topics_description:        topicsRaw.trim(),
     question_repeat_threshold: isNaN(threshold) ? 75 : threshold,
-    total_examples:           isNaN(totalEx) ? 100 : totalEx,
-    knowledge_base_path:      kbPath || './knowledge_base',
-    brain_id:                 brainId || 'default',
+    knowledge_base_path:       kbPath,
   };
-  if (firebase) payload.firebase_credential_path = firebase;
 
   try {
     const res  = await fetch(`${API}/initialize`, {
@@ -616,8 +622,14 @@ function resetFilters() {
 }
 
 function initTheme() {
-  const saved = localStorage.getItem('nero-theme') || 'midnight';
+  const saved = localStorage.getItem('nero-theme') || 'nordic';
   setTheme(saved);
+  // Restore saved KB path
+  const savedPath = localStorage.getItem('nero-kbpath');
+  if (savedPath) {
+    const el = document.getElementById('f-kbpath');
+    if (el) el.value = savedPath;
+  }
   ['brightness', 'contrast', 'exposure'].forEach(type => {
     const stored = localStorage.getItem(`nero-filter-${type}`);
     if (stored !== null) {
