@@ -7,6 +7,11 @@ import json
 from pathlib import Path
 from typing import List, Optional, Dict
 
+import torch
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import LinearLR
+from torch.utils.data import DataLoader
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -136,43 +141,86 @@ async def stop_training():
 
 
 async def training_loop():
-    """Background training loop with real-time updates."""
+    """Background training loop — real forward/backward/optimizer steps."""
     global training_active
+
+    BATCH_SIZE = 8
+    GRAD_ACCUM_STEPS = 4
+    LR = 2e-4
+    WARMUP_STEPS = 100
+    PHASE_ADVANCE_STEPS = 1000
+
     curriculum = GenerativeCurriculum(teacher, brain.tokenizer)
 
-    while training_active:
-        # Generate batch based on current phase
-        batch = curriculum.generate_phase_batch(batch_size=20)
+    optimizer = AdamW(
+        list(brain.model.parameters()) + list(brain.generative_head.parameters()),
+        lr=LR,
+        weight_decay=0.01,
+    )
+    scheduler = LinearLR(optimizer, start_factor=1e-3, end_factor=1.0, total_iters=WARMUP_STEPS)
 
-        for i, example in enumerate(batch):
+    brain.train()
+    step = 0
+    optimizer.zero_grad()
+
+    while training_active:
+        dataset = curriculum.generate_phase_batch(batch_size=20)
+        loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+        for batch in loader:
             if not training_active:
                 break
 
-            # Forward pass, backward pass, update would go here
-            # Placeholder: record progress
+            input_ids = batch.input_ids.to(brain.device)
+            attention_mask = batch.attention_mask.to(brain.device)
+            labels = batch.labels.to(brain.device)
+            teacher_logits = batch.teacher_logits.to(brain.device) if batch.teacher_logits is not None else None
+
+            outputs = brain(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels,
+                teacher_logits=teacher_logits,
+            )
+
+            loss = outputs["loss"] / GRAD_ACCUM_STEPS
+            loss.backward()
+
+            step += 1
+            if step % GRAD_ACCUM_STEPS == 0:
+                torch.nn.utils.clip_grad_norm_(
+                    list(brain.model.parameters()) + list(brain.generative_head.parameters()),
+                    max_norm=1.0,
+                )
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+
+            real_loss = (loss * GRAD_ACCUM_STEPS).item()
             brain.training_history.append({
-                "step": len(brain.training_history),
+                "step": step,
                 "phase": curriculum.phase_names[curriculum.current_phase],
-                "example_idx": i
+                "loss": real_loss,
             })
 
-            # Save checkpoint periodically
-            if len(brain.training_history) % 100 == 0:
+            # Checkpoint every 100 optimizer steps
+            if step % (100 * GRAD_ACCUM_STEPS) == 0:
                 knowledge_manager.save_checkpoint(
                     brain.model.state_dict(),
                     {
-                        "loss": 0.5,
-                        "accuracy": 0.8,
-                        "phase": curriculum.current_phase
-                    }
+                        "loss": real_loss,
+                        "step": step,
+                        "phase": curriculum.current_phase,
+                    },
                 )
 
-        # Check for phase advancement
-        if len(brain.training_history) > 1000:
+            await asyncio.sleep(0)  # Yield control to event loop
+
+        # Advance curriculum phase based on steps
+        if step >= PHASE_ADVANCE_STEPS * (curriculum.current_phase + 1):
             curriculum.advance_phase()
 
-        await asyncio.sleep(0)  # Yield control
-
+    brain.eval()
     training_active = False
 
 
@@ -183,12 +231,13 @@ async def training_websocket(websocket: WebSocket):
     try:
         while True:
             if brain and training_active:
+                last = brain.training_history[-1] if brain.training_history else {}
                 metrics = {
-                    "loss": 0.5,
-                    "accuracy": 0.8,
-                    "phase": "generation",
-                    "examples_processed": len(brain.training_history) if brain else 0,
-                    "timestamp": asyncio.get_event_loop().time()
+                    "loss": last.get("loss"),
+                    "phase": last.get("phase"),
+                    "step": last.get("step", 0),
+                    "examples_processed": len(brain.training_history),
+                    "timestamp": asyncio.get_event_loop().time(),
                 }
                 await websocket.send_json(metrics)
 
