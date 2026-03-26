@@ -62,8 +62,10 @@ async function browseFolder() {
       document.getElementById('f-kbpath').value = data.path;
       localStorage.setItem('nero-kbpath', data.path);
     }
+    document.getElementById('browse-hint').style.display = 'none';
   } catch {
-    alert('Could not open folder picker. Is the NERO server running?');
+    // Server not running — reveal the hint and let the user type the path manually
+    document.getElementById('browse-hint').style.display = 'block';
   }
 }
 
