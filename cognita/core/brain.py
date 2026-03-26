@@ -201,37 +201,34 @@ class NEROBrain(nn.Module):
                 max_length=512
             ).to(self.device)
 
-            # Get base model output
-            outputs = self.model.generate(
+            prompt_len = inputs["input_ids"].shape[1]
+
+            # Generate only new tokens beyond the prompt
+            output_ids = self.model.generate(
                 **inputs,
-                max_length=max_length,
+                max_new_tokens=max_length,
                 num_return_sequences=1,
                 temperature=self.temperature,
                 top_p=0.9,
+                repetition_penalty=1.3,
                 do_sample=True,
-                pad_token_id=self.tokenizer.eos_token_id
+                pad_token_id=self.tokenizer.eos_token_id,
             )
 
-            # Get generative head influence
-            base_output = self.model(
-                **inputs,
-                output_hidden_states=True
-            )
-            gen_influence = self.generative_head(base_output.hidden_states[-1][:, -1, :])
+            # Slice off the prompt tokens — decode answer tokens only
+            answer_ids = output_ids[0, prompt_len:]
+            answer = self.tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
 
-            # Calculate confidence score
-            confidence = torch.softmax(gen_influence, dim=-1).max().item()
-
-            generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-            # Remove the question from the answer if it appears
-            answer = generated_text.replace(question, "").strip()
+            # Confidence: mean max-prob over generated tokens via generative head
+            base_output = self.model(**inputs, output_hidden_states=True)
+            gen_influence = self.generative_head(base_output.hidden_states[-1])
+            confidence = torch.softmax(gen_influence, dim=-1).max(dim=-1).values.mean().item()
 
             return {
                 "answer": answer,
                 "confidence": confidence,
                 "is_original": confidence > min_confidence,
-                "tokens_used": outputs.shape[1]
+                "tokens_used": answer_ids.shape[0],
             }
 
     def save_knowledge_state(self, path: Path):
