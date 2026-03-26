@@ -50,6 +50,7 @@ _final_report: Optional[Dict] = None
 _nlp_phase_topics: Dict[str, List[str]] = {}
 _topics_per_session: int = 5
 _training_error: Optional[str] = None
+_training_status: str = ""
 
 # Load NLP curriculum from teacher_config.yaml on startup
 _TEACHER_CONFIG_PATH = Path(__file__).parents[2] / "configs" / "teacher_config.yaml"
@@ -222,8 +223,9 @@ def _run_validation(dataset, batch_size: int) -> Dict:
 
 async def training_loop():
     """Background training loop — real forward/backward/optimizer steps."""
-    global training_active, training_complete, _final_report, _training_error
+    global training_active, training_complete, _final_report, _training_error, _training_status
     _training_error = None
+    _training_status = ""
 
     BATCH_SIZE = 8
     GRAD_ACCUM_STEPS = 4
@@ -266,11 +268,13 @@ async def training_loop():
                 _final_report = question_bank.generate_report(_topics_description)
                 break
 
+            _training_status = "Asking teacher for training examples…"
             loop = asyncio.get_event_loop()
             current_dataset = await loop.run_in_executor(
                 None,
-                lambda: curriculum.generate_phase_batch(batch_size=20, question_bank=question_bank)
+                lambda: curriculum.generate_phase_batch(batch_size=5, question_bank=question_bank)
             )
+            _training_status = "Training on batch…"
             loader = DataLoader(current_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
             for batch in loader:
@@ -383,6 +387,7 @@ async def training_websocket(websocket: WebSocket):
                     "repeat_threshold":   _repeat_threshold,
                     "training_complete":  training_complete,
                     "training_error":     _training_error,
+                    "training_status":    _training_status,
                     "timestamp":          asyncio.get_event_loop().time(),
                 }
                 await websocket.send_json(metrics)

@@ -321,6 +321,12 @@ function connectWS() {
       _updateLogsSummary(m.bank_count, m.toss_count, m.repeat_threshold, m.training_complete);
     }
 
+    // Training status (generating / training on batch)
+    if (m.training_status && m.training_status !== state.lastTrainingStatus) {
+      state.lastTrainingStatus = m.training_status;
+      addLog('system', m.training_status);
+    }
+
     // Training error
     if (m.training_error && m.training_error !== state.lastTrainingError) {
       state.lastTrainingError = m.training_error;
