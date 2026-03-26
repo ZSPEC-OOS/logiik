@@ -55,7 +55,7 @@ class NEROBrain(nn.Module):
             lora_alpha=lora_alpha,
             lora_dropout=0.05,
             bias="none",
-            target_modules=["q_proj", "v_proj", "k_proj", "o_proj"]
+            target_modules=["c_attn", "c_proj"]
         )
         self.model = get_peft_model(self.base_model, lora_config)
 
