@@ -41,8 +41,11 @@ curriculum:
       duration: 0.2
       generative_ratio: 0.8
     - name: "coding_mastery"
-      duration: 0.2
+      duration: 0.15
       generative_ratio: 0.9
+    - name: "drosophila_ai_framework"
+      duration: 0.15
+      generative_ratio: 0.95
   structure:
     min_answers: 5
     max_answers: 10
