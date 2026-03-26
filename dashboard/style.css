@@ -115,6 +115,7 @@ body {
 
 /* ─── Sidebar elements ───────────────────────────────────────── */
 .logo {
+  font-family: 'MuseoModerno', sans-serif;
   font-size: 1.4rem;
   font-weight: 900;
   letter-spacing: .05em;
@@ -287,7 +288,7 @@ body {
   resize: vertical;
 }
 .form-group input:focus,
-.form-group textarea:focus { outline: none; border-color: var(--accent); background: #fff; }
+.form-group textarea:focus { outline: none; border-color: var(--accent); background: var(--surface); color: var(--text); }
 
 .init-msg { font-size: .84rem; font-weight: 500; }
 .init-msg.error   { color: var(--red); }
@@ -431,7 +432,7 @@ textarea {
   background: var(--bg);
   color: var(--text);
 }
-textarea:focus { outline: none; border-color: var(--accent); background: #fff; }
+textarea:focus { outline: none; border-color: var(--accent); background: var(--surface); color: var(--text); }
 
 .checkbox-label {
   display: flex;
