@@ -15,7 +15,7 @@ import requests
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-# ── Hardcoded Firebase project config ─────────────────────────────────
+# ── Firebase project config ────────────────────────────────────────────
 _PROJECT  = "nero-85ed0"
 _API_KEY  = "AIzaSyAD1Lu8bT5VTZC2k4suWk_X2FfSW9H-fUI"
 _BASE_URL = (
