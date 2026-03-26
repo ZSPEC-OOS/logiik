@@ -69,6 +69,56 @@ def _load_nlp_curriculum() -> tuple[Dict[str, List[str]], int]:
     return phase_topics, topics_per_session
 
 
+def _training_history_file() -> Optional[Path]:
+    if not knowledge_manager:
+        return None
+    return Path(knowledge_manager.base_path) / "training_data" / "training_history_latest.json"
+
+
+def _final_report_file() -> Optional[Path]:
+    if not knowledge_manager:
+        return None
+    return Path(knowledge_manager.base_path) / "logs" / "final_report.json"
+
+
+def _persist_training_history():
+    if not brain:
+        return
+    history_path = _training_history_file()
+    if not history_path:
+        return
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(history_path, "w") as f:
+        json.dump(brain.training_history, f, indent=2)
+
+
+def _load_training_history():
+    if not brain:
+        return
+    history_path = _training_history_file()
+    if not history_path or not history_path.exists():
+        return
+    with open(history_path) as f:
+        brain.training_history = json.load(f)
+
+
+def _persist_final_report(report: Dict):
+    report_path = _final_report_file()
+    if not report_path:
+        return
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+
+
+def _load_final_report() -> Optional[Dict]:
+    report_path = _final_report_file()
+    if not report_path or not report_path.exists():
+        return None
+    with open(report_path) as f:
+        return json.load(f)
+
+
 class TrainingConfig(BaseModel):
     teacher_api_key: str
     teacher_base_url: str                   # e.g. https://api.moonshot.cn/v1
@@ -115,7 +165,7 @@ async def initialize_system(config: TrainingConfig):
     """Initialize brain, teacher, knowledge base, and question bank."""
     global brain, teacher, knowledge_manager, question_bank
     global _topics_description, _repeat_threshold, training_complete, _final_report
-    global _nlp_phase_topics, _topics_per_session
+    global _nlp_phase_topics, _topics_per_session, _training_status, _current_topics, _training_error
 
     try:
         # Firebase is always active — config is hardcoded in firebase_memory.py
@@ -144,7 +194,17 @@ async def initialize_system(config: TrainingConfig):
         _repeat_threshold = config.question_repeat_threshold
         training_complete = False
         _final_report = None
+        _training_status = ""
+        _current_topics = []
         _nlp_phase_topics, _topics_per_session = _load_nlp_curriculum()
+        _training_error = None
+
+        _load_training_history()
+
+        if question_bank.toss_count >= _repeat_threshold:
+            training_complete = True
+            _final_report = _load_final_report() or question_bank.generate_report(_topics_description)
+            _persist_final_report(_final_report)
 
         # Load existing knowledge if available
         kb_summary = knowledge_manager.get_attachable_knowledge_summary()
@@ -268,6 +328,8 @@ async def training_loop():
                 training_active = False
                 training_complete = True
                 _final_report = question_bank.generate_report(_topics_description)
+                _persist_final_report(_final_report)
+                _persist_training_history()
                 break
 
             phase_name = curriculum.phase_names[curriculum.current_phase]
@@ -322,6 +384,7 @@ async def training_loop():
                             "loss": (loss * GRAD_ACCUM_STEPS).item(),
                             **val_metrics,
                         })
+                        _persist_training_history()
 
                         # Plateau detection for phase advancement
                         if val_loss is not None:
@@ -369,6 +432,18 @@ async def training_loop():
 
     brain.eval()
     training_active = False
+    _persist_training_history()
+
+
+@app.get("/training/history")
+async def training_history():
+    """Return persisted training history entries."""
+    if not brain:
+        raise HTTPException(status_code=400, detail="Brain not initialized")
+    return {
+        "count": len(brain.training_history),
+        "entries": brain.training_history,
+    }
 
 
 @app.websocket("/ws/training")
