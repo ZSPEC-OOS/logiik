@@ -37,15 +37,19 @@ def install_dependencies():
             print("Warning: some packages may not have installed correctly.")
 
 
-def wait_for_server(timeout=30):
-    import urllib.request, urllib.error
+def wait_for_server(timeout=60):
+    import urllib.request
     deadline = time.time() + timeout
+    # Try both localhost and 127.0.0.1 in case one resolves differently on Windows
+    urls = [f"{URL}/health", f"http://127.0.0.1:{PORT}/health"]
     while time.time() < deadline:
-        try:
-            urllib.request.urlopen(f"{URL}/health", timeout=1)
-            return True
-        except Exception:
-            time.sleep(0.5)
+        for u in urls:
+            try:
+                urllib.request.urlopen(u, timeout=2)
+                return True
+            except Exception:
+                pass
+        time.sleep(1)
     return False
 
 
@@ -70,9 +74,9 @@ def main():
     print(f"Waiting for server to be ready at {URL} …")
     if wait_for_server():
         print(f"NERO is running. Opening {URL} …")
-        webbrowser.open(URL)
     else:
-        print(f"Server did not respond in time. Open {URL} manually.")
+        print(f"Opening {URL} — server may still be starting up…")
+    webbrowser.open(URL)
 
     print("\nLeave this window open while you use NERO. Press Ctrl+C to stop.\n")
     try:
