@@ -33,6 +33,13 @@
         <button class="btn" onclick="exportKnowledge()">📥 Export Package</button>
       </section>
 
+      <section class="sidebar-section">
+        <h3>Help</h3>
+        <button class="btn btn-help" onclick="showTab('help', document.querySelector('[data-tab=help]'))">
+          ? How to use NERO
+        </button>
+      </section>
+
       <div id="status-badge" class="status-badge idle">● Idle</div>
     </aside>
 
@@ -79,6 +86,7 @@
         <button class="tab"        data-tab="monitor"   onclick="showTab('monitor',  this)">📈 Monitor</button>
         <button class="tab"        data-tab="knowledge" onclick="showTab('knowledge',this)">🗄 Knowledge</button>
         <button class="tab"        data-tab="test"      onclick="showTab('test',     this)">💬 Test AI</button>
+        <button class="tab"        data-tab="help"      onclick="showTab('help',     this)">? Help</button>
       </div>
 
       <!-- ── Tab: Setup ──────────────────────────────────── -->
@@ -220,6 +228,442 @@
           </div>
         </div>
       </div>
+
+      <!-- ── Tab: Help ───────────────────────────────────── -->
+      <div id="tab-help" class="tab-panel">
+
+        <div class="help-hero">
+          <div class="help-hero-title">Welcome to NERO</div>
+          <div class="help-hero-sub">
+            NERO is an AI model that learns by studying questions and answers provided by a powerful teacher AI (Kimi K2.5).
+            This guide walks you through everything — no coding knowledge required.
+          </div>
+        </div>
+
+        <!-- Quick-start nav pills -->
+        <div class="help-nav">
+          <a class="help-pill" href="#h-what">What is NERO?</a>
+          <a class="help-pill" href="#h-before">Before you start</a>
+          <a class="help-pill" href="#h-run">Running the server</a>
+          <a class="help-pill" href="#h-setup">Step 1 · Setup</a>
+          <a class="help-pill" href="#h-train">Step 2 · Training</a>
+          <a class="help-pill" href="#h-monitor">Step 3 · Monitor</a>
+          <a class="help-pill" href="#h-test">Step 4 · Test AI</a>
+          <a class="help-pill" href="#h-export">Exporting</a>
+          <a class="help-pill" href="#h-glossary">Glossary</a>
+          <a class="help-pill" href="#h-faq">FAQ</a>
+        </div>
+
+        <!-- ── What is NERO ── -->
+        <div class="help-section" id="h-what">
+          <h2 class="help-h2">What is NERO?</h2>
+          <p>
+            NERO is a <strong>student AI</strong> that gets smarter by learning from a <strong>teacher AI</strong>.
+            The teacher (Kimi K2.5) generates training questions and multiple possible answers.
+            NERO studies all of those question–answer pairs and gradually develops the ability to answer
+            new questions on its own — without looking anything up or copying from the training data.
+          </p>
+          <div class="help-diagram">
+            <div class="hd-box hd-teacher">Kimi K2.5<br><span>Teacher AI</span></div>
+            <div class="hd-arrow">Questions &amp; Answers ▶</div>
+            <div class="hd-box hd-nero">NERO<br><span>Student AI</span></div>
+            <div class="hd-arrow">▶ Generates answers</div>
+            <div class="hd-box hd-you">You<br><span>Ask questions</span></div>
+          </div>
+          <p>Training happens in three phases, each building on the last:</p>
+          <div class="help-phases-list">
+            <div class="hpl-item" style="border-color:#4CAF50">
+              <strong style="color:#4CAF50">Phase 1 — Memorization</strong>
+              <p>NERO studies factual Q&amp;A pairs. It learns the basic structure of questions and answers.</p>
+            </div>
+            <div class="hpl-item" style="border-color:#667eea">
+              <strong style="color:#667eea">Phase 2 — Generation</strong>
+              <p>NERO starts forming its own answers rather than just selecting from given options.</p>
+            </div>
+            <div class="hpl-item" style="border-color:#f093fb">
+              <strong style="color:#f093fb">Phase 3 — Abstraction</strong>
+              <p>NERO connects ideas across different topics and produces more sophisticated responses.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Before you start ── -->
+        <div class="help-section" id="h-before">
+          <h2 class="help-h2">Before You Start</h2>
+          <p>You will need three things from your Kimi K2.5 account:</p>
+
+          <div class="help-checklist">
+            <div class="hcl-item">
+              <div class="hcl-num">1</div>
+              <div>
+                <strong>API Key</strong> — a secret password that lets NERO talk to Kimi K2.5.
+                It usually looks like <code>sk-abc123…</code>.
+                Keep it private — do not share it.
+              </div>
+            </div>
+            <div class="hcl-item">
+              <div class="hcl-num">2</div>
+              <div>
+                <strong>Base URL</strong> — the web address of the Kimi K2.5 API endpoint.
+                Example: <code>https://api.moonshot.cn/v1</code>
+              </div>
+            </div>
+            <div class="hcl-item">
+              <div class="hcl-num">3</div>
+              <div>
+                <strong>Model ID</strong> — the exact name of the model to use.
+                Example: <code>kimi-k2-5</code>. Check your Kimi dashboard for the correct ID.
+              </div>
+            </div>
+          </div>
+
+          <div class="help-callout help-callout-tip">
+            <strong>Tip:</strong> You also need to decide what topics you want NERO to learn about.
+            You can use plain English phrases like <em>history of the Roman Empire</em>,
+            <em>basic mathematics</em>, or <em>creative writing</em>.
+            NERO will ask Kimi K2.5 to generate training questions on those subjects.
+          </div>
+        </div>
+
+        <!-- ── Running the server ── -->
+        <div class="help-section" id="h-run">
+          <h2 class="help-h2">Running the NERO Server</h2>
+          <p>
+            The dashboard you are reading right now is served by the NERO backend.
+            If you can see this page, the server is already running and you can skip this section.
+          </p>
+          <p>If you need to start it yourself, open a terminal in the NERO project folder and run:</p>
+          <div class="help-code">uvicorn cognita.api.server:app --host 0.0.0.0 --port 8000</div>
+          <p>Then open your browser and go to <code>http://localhost:8000</code>.</p>
+
+          <div class="help-callout help-callout-warn">
+            <strong>Note:</strong> The server must stay running the whole time you are training.
+            If you close the terminal window, training will stop.
+          </div>
+        </div>
+
+        <!-- ── Step 1: Setup ── -->
+        <div class="help-section" id="h-setup">
+          <h2 class="help-h2">Step 1 — Setup &amp; Initialize</h2>
+          <p>Click the <strong>⚙ Setup</strong> tab (or the <em>Setup &amp; Initialize</em> button in the sidebar).</p>
+
+          <div class="help-steps">
+            <div class="hs-step">
+              <div class="hs-num">1</div>
+              <div>
+                <strong>Teacher API Key</strong> — paste your Kimi K2.5 API key here.
+                The field hides what you type for security.
+              </div>
+            </div>
+            <div class="hs-step">
+              <div class="hs-num">2</div>
+              <div>
+                <strong>Teacher Base URL</strong> — paste the API base address,
+                e.g. <code>https://api.moonshot.cn/v1</code>.
+              </div>
+            </div>
+            <div class="hs-step">
+              <div class="hs-num">3</div>
+              <div>
+                <strong>Model ID</strong> — type the model name, e.g. <code>kimi-k2-5</code>.
+              </div>
+            </div>
+            <div class="hs-step">
+              <div class="hs-num">4</div>
+              <div>
+                <strong>Training Topics</strong> — type the subjects you want NERO to learn,
+                one per line. Examples:
+                <div class="help-code" style="margin-top:.5rem">basic_reasoning
+fact_recall
+creative_writing
+science_concepts</div>
+              </div>
+            </div>
+            <div class="hs-step">
+              <div class="hs-num">5</div>
+              <div>
+                <strong>Total Examples</strong> — how many question–answer pairs the teacher
+                should generate in total. Start with <code>100</code> for a quick test.
+                Higher numbers mean more learning but take longer.
+              </div>
+            </div>
+            <div class="hs-step">
+              <div class="hs-num">6</div>
+              <div>
+                Leave <strong>Brain ID</strong>, <strong>Knowledge Base Path</strong>,
+                and <strong>Firebase</strong> at their defaults unless you know what they do.
+              </div>
+            </div>
+            <div class="hs-step">
+              <div class="hs-num">7</div>
+              <div>
+                Click <strong>⚡ Initialize System</strong>.
+                You will see a green confirmation message and the sidebar will change to <em>Initialized</em>.
+                The Start Training button will become clickable.
+              </div>
+            </div>
+          </div>
+
+          <div class="help-callout help-callout-tip">
+            <strong>Already trained before?</strong> NERO automatically loads your last saved checkpoint
+            when you initialize. You will see how many checkpoints were found in the confirmation message.
+          </div>
+        </div>
+
+        <!-- ── Step 2: Training ── -->
+        <div class="help-section" id="h-train">
+          <h2 class="help-h2">Step 2 — Start Training</h2>
+          <p>
+            Once initialized, click <strong>▶ Start Training</strong> in the sidebar.
+            The status badge in the bottom-left will turn green and start pulsing.
+          </p>
+          <p>What happens behind the scenes:</p>
+          <ol class="help-ol">
+            <li>NERO asks Kimi K2.5 to generate batches of question–answer pairs on your chosen topics.</li>
+            <li>For every question, Kimi produces 5–10 possible answers of varying quality.</li>
+            <li>NERO studies each question paired with each answer independently, learning the full range of how a question can be answered.</li>
+            <li>Every 50 training steps NERO tests itself on a held-out set of examples it has never seen, to check it is genuinely learning and not just memorising.</li>
+            <li>When progress on the held-out test plateaus, NERO automatically advances to the next curriculum phase.</li>
+            <li>A checkpoint (saved snapshot) is written every 100 steps.</li>
+          </ol>
+          <p>Click <strong>⏹ Stop Training</strong> at any time to pause. Your progress is saved automatically.</p>
+
+          <div class="help-callout help-callout-warn">
+            <strong>Heads up:</strong> Training makes real API calls to Kimi K2.5 and will consume your API credits.
+            Start with a small number of Total Examples (e.g. 50–100) to test your setup before running a long session.
+          </div>
+        </div>
+
+        <!-- ── Step 3: Monitor ── -->
+        <div class="help-section" id="h-monitor">
+          <h2 class="help-h2">Step 3 — Monitoring Progress</h2>
+          <p>Click the <strong>📈 Monitor</strong> tab to watch training in real time.</p>
+
+          <h3 class="help-h3">Curriculum Phase cards</h3>
+          <p>
+            Three cards show which phase NERO is in. The active phase is highlighted and labelled <em>Active</em>.
+            Completed phases are labelled <em>Done</em>. Upcoming ones are faded and labelled <em>Pending</em>.
+          </p>
+
+          <h3 class="help-h3">Loss Curves chart</h3>
+          <p>
+            This chart has two lines:
+          </p>
+          <ul class="help-ul">
+            <li>
+              <strong style="color:#FF6B6B">Train Loss (red)</strong> — how wrong NERO is on the
+              examples it is currently studying. You want this to go <em>down</em> over time.
+            </li>
+            <li>
+              <strong style="color:#4ECDC4">Val Loss (teal dashed)</strong> — how wrong NERO is on
+              a separate set of examples it has never trained on. This is the most honest measure of learning.
+              You want this to go down too.
+            </li>
+          </ul>
+          <div class="help-callout help-callout-tip">
+            <strong>What if Train Loss drops but Val Loss stays high?</strong>
+            This is called <em>overfitting</em> — NERO has memorised the training examples instead of
+            truly understanding them. Try reducing Total Examples or adding more variety to your topics.
+          </div>
+
+          <h3 class="help-h3">Validation Perplexity chart</h3>
+          <p>
+            Perplexity is a measure of how <em>surprised</em> NERO is by correct answers.
+            A lower number is better. Think of it like this:
+          </p>
+          <div class="help-table-wrap">
+            <table class="help-table">
+              <thead><tr><th>Perplexity</th><th>What it means</th></tr></thead>
+              <tbody>
+                <tr><td>&lt; 10</td><td>Excellent — NERO is very confident on these topics</td></tr>
+                <tr><td>10 – 50</td><td>Good — solid learning, room to improve</td></tr>
+                <tr><td>50 – 200</td><td>Fair — still learning, early stages</td></tr>
+                <tr><td>&gt; 200</td><td>Poor — training has just started or something may be wrong</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="help-h3">Metric cards (top of page)</h3>
+          <div class="help-table-wrap">
+            <table class="help-table">
+              <thead><tr><th>Card</th><th>What it shows</th></tr></thead>
+              <tbody>
+                <tr><td>Optimizer Step</td><td>How many weight-update cycles have been completed</td></tr>
+                <tr><td>Train Loss</td><td>Most recent training loss value</td></tr>
+                <tr><td>Val Loss</td><td>Most recent validation loss (updates every 50 steps)</td></tr>
+                <tr><td>Val Perplexity</td><td>Most recent validation perplexity</td></tr>
+                <tr><td>Checkpoints</td><td>Number of model snapshots saved to disk</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="help-h3">Training Log</h3>
+          <p>
+            A live terminal-style panel at the bottom of the Monitor tab.
+            It records every validation result, phase change, connection event, and error in real time.
+            Use the <strong>Clear</strong> button to wipe it. It keeps the last 200 entries.
+          </p>
+        </div>
+
+        <!-- ── Step 4: Test AI ── -->
+        <div class="help-section" id="h-test">
+          <h2 class="help-h2">Step 4 — Testing NERO</h2>
+          <p>
+            Click the <strong>💬 Test AI</strong> tab to ask NERO questions directly.
+            NERO must be initialized first; it does not need to be actively training.
+          </p>
+          <div class="help-steps">
+            <div class="hs-step">
+              <div class="hs-num">1</div>
+              <div>Type your question in the text box.</div>
+            </div>
+            <div class="hs-step">
+              <div class="hs-num">2</div>
+              <div>
+                Leave <strong>Require original answer</strong> checked. This tells NERO to only
+                return a response it is confident it generated itself rather than recalled from memory.
+                Uncheck it if you want responses even when NERO is less certain.
+              </div>
+            </div>
+            <div class="hs-step">
+              <div class="hs-num">3</div>
+              <div>Click <strong>Generate Response</strong> and wait a few seconds.</div>
+            </div>
+          </div>
+
+          <p>Below the answer you will see three indicators:</p>
+          <div class="help-table-wrap">
+            <table class="help-table">
+              <thead><tr><th>Indicator</th><th>What it means</th></tr></thead>
+              <tbody>
+                <tr><td>Confidence</td><td>How sure NERO is about its answer (higher % is more confident)</td></tr>
+                <tr><td>Original</td><td><em>Yes</em> means NERO generated this rather than copying; <em>No</em> means it was less confident</td></tr>
+                <tr><td>Tokens</td><td>Approximate length of the answer in word-pieces (roughly 1 token ≈ ¾ of a word)</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="help-callout help-callout-tip">
+            <strong>Early in training?</strong> Responses will be rough or incoherent — that is normal.
+            NERO needs hundreds or thousands of training steps before producing fluent answers.
+            Keep training and test again later.
+          </div>
+        </div>
+
+        <!-- ── Exporting ── -->
+        <div class="help-section" id="h-export">
+          <h2 class="help-h2">Exporting Your Knowledge Base</h2>
+          <p>
+            Click <strong>📥 Export Package</strong> in the sidebar to save a portable copy
+            of everything NERO has learned to your server's disk.
+            The export path is shown in the Training Log.
+          </p>
+          <p>
+            The export includes the LoRA adapter weights, the generative head, and all metadata.
+            You can copy this folder to another machine and load it the next time you initialize
+            by pointing the <strong>Knowledge Base Path</strong> field at it.
+          </p>
+          <p>
+            The <strong>🗄 Knowledge</strong> tab shows you what is currently stored:
+            how many checkpoints exist, how many embeddings have been saved, and the details
+            of the most recent checkpoint including its loss and perplexity.
+          </p>
+        </div>
+
+        <!-- ── Glossary ── -->
+        <div class="help-section" id="h-glossary">
+          <h2 class="help-h2">Glossary</h2>
+          <dl class="help-dl">
+            <div class="help-dl-row">
+              <dt>Loss</dt>
+              <dd>A number measuring how wrong the model's predictions are. Lower is better. Zero would mean perfect.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Validation Loss</dt>
+              <dd>Loss measured on examples the model has never trained on — a more honest measure of learning than training loss.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Perplexity</dt>
+              <dd>How surprised the model is by correct answers. Lower is better. It is calculated as e raised to the power of the validation loss.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Overfitting</dt>
+              <dd>When a model memorises training examples instead of learning general patterns. Signs: training loss keeps falling but validation loss stops improving or rises.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Checkpoint</dt>
+              <dd>A snapshot of NERO's weights saved to disk at regular intervals so training can resume or be rolled back.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>LoRA</dt>
+              <dd>A technique that fine-tunes only a small fraction of the model's parameters, making training faster and cheaper without sacrificing quality.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Optimizer Step</dt>
+              <dd>One cycle of adjusting NERO's internal weights based on what it got wrong. Gradients are accumulated over 4 batches before each step.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Curriculum Phase</dt>
+              <dd>A stage of training with a different goal. NERO moves through Memorization → Generation → Abstraction automatically when its validation loss stops improving.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Teacher AI</dt>
+              <dd>Kimi K2.5, the external AI that generates the training questions and answers NERO learns from.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Knowledge Distillation</dt>
+              <dd>A technique where the student model (NERO) learns not just the right answer but also the teacher's probability distribution over all possible answers — a richer signal than a single label.</dd>
+            </div>
+            <div class="help-dl-row">
+              <dt>Token</dt>
+              <dd>A chunk of text roughly equal to ¾ of a word. Language models read and write in tokens, not characters or words.</dd>
+            </div>
+          </dl>
+        </div>
+
+        <!-- ── FAQ ── -->
+        <div class="help-section" id="h-faq">
+          <h2 class="help-h2">Frequently Asked Questions</h2>
+
+          <div class="faq-item">
+            <div class="faq-q">The status says "Not initialized" — what do I do?</div>
+            <div class="faq-a">Go to the Setup tab, fill in your Kimi K2.5 credentials and topics, then click Initialize System.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-q">Start Training is greyed out.</div>
+            <div class="faq-a">You must initialize the system first. Complete the Setup tab and click Initialize System.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-q">The Training Log shows "WebSocket disconnected".</div>
+            <div class="faq-a">The dashboard lost its live connection to the server. It will reconnect automatically in 3 seconds. If it keeps happening, check that the NERO server is still running in your terminal.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-q">My validation loss is going up while training loss goes down.</div>
+            <div class="faq-a">This is overfitting. NERO is memorising instead of learning. Try adding more diverse topics, reducing Total Examples per batch, or stopping training and testing with the current checkpoint.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-q">How long does training take?</div>
+            <div class="faq-a">It depends on your hardware and how many examples you requested. On a modern GPU, 100 examples typically take a few minutes. On CPU it will be significantly slower. Watch the Training Log and Optimizer Step counter to track progress.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-q">Can I stop and resume training?</div>
+            <div class="faq-a">Yes. Click Stop Training — NERO saves a checkpoint automatically. Next time you initialize (with the same Knowledge Base Path), the latest checkpoint is loaded and you can click Start Training to continue.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-q">NERO's answers look like nonsense.</div>
+            <div class="faq-a">This is normal early in training. The model needs many optimizer steps before generating coherent text. Keep training, watch the perplexity chart drop, and test again after a few hundred steps.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-q">I accidentally closed the browser. Is my training lost?</div>
+            <div class="faq-a">No. Training runs on the server, not in the browser. Close and reopen the page freely — the server keeps running and the WebSocket reconnects automatically.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-q">What is the Firebase field for?</div>
+            <div class="faq-a">Firebase is an optional cloud storage service. If you leave it blank, all checkpoints and embeddings are saved locally on the server. You only need Firebase if you want to sync NERO's memory across multiple machines.</div>
+          </div>
+        </div>
+
+      </div><!-- /tab-help -->
 
       <footer>NERO v2.0</footer>
     </main>
