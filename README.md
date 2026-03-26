@@ -100,7 +100,7 @@ cognita/
 │   ├── brain.py              # Transformer + LoRA + Generative head
 │   └── teacher_interface.py  # OpenAI & Anthropic teacher connectors
 ├── training/
-│   └── curriculum.py         # 5-phase curriculum engine
+│   └── curriculum.py         # 7-phase curriculum engine
 ├── storage/
 │   └── checkpoint_manager.py # Local knowledge base manager
 ├── dashboard/
@@ -132,8 +132,12 @@ knowledge_base/               # Attachable AI knowledge folder
 | 1 | **Memorization** | Learn from teacher's Q+A structure | 10% |
 | 2 | **Generation** | Create original answers | 50% |
 | 3 | **Abstraction** | Cross-domain knowledge synthesis | 80% |
-| 4 | **Coding Mastery** | Complete coding understanding across common languages | 90% |
-| 5 | **Drosophila AI Framework** | Specialized framework design for Drosophila genetics with axon guidance and neural wiring focus | 95% |
+| 4 | **Engineering Execution & Reliability** | Build production software behavior: planning, testing, debugging, and quality gates | 85% |
+| 5 | **Coding Mastery** | Complete coding understanding across common languages | 90% |
+| 6 | **Scientific Reasoning & Experimental Design** | Build falsifiable hypothesis, controls, uncertainty handling, and evidence discipline | 93% |
+| 7 | **Drosophila AI Framework** | Specialized framework design for Drosophila genetics with axon guidance and neural wiring focus | 95% |
+
+See `docs/PHASE_CURRICULUM_REVIEW.md` for a detailed readiness review and a recommended 7-phase progression that adds two bridge phases before advanced coding/scientific specialization.
 
 ## 🏗️ Architecture
 

@@ -172,8 +172,10 @@ class GenerativeCurriculum:
     Phase 1: Learn from teacher's Q+A structure (memorization)
     Phase 2: Generate novel answers given questions (generation)
     Phase 3: Synthesize knowledge across domains (abstraction)
-    Phase 4: Demonstrate complete coding understanding across common languages
-    Phase 5: Build specialized scientific framework competency (Drosophila genetics focus)
+    Phase 4: Build engineering execution reliability (tooling, testing, debugging loops)
+    Phase 5: Demonstrate complete coding understanding across common languages
+    Phase 6: Develop scientific reasoning and experiment design rigor
+    Phase 7: Build specialized scientific framework competency (Drosophila genetics focus)
     """
 
     def __init__(
@@ -181,7 +183,7 @@ class GenerativeCurriculum:
         teacher_orchestrator,
         tokenizer,
         topics_description: str = "",
-        phase_ratios: Tuple[float, float, float, float, float] = (0.25, 0.25, 0.2, 0.15, 0.15),
+        phase_ratios: Tuple[float, ...] = (0.2, 0.2, 0.15, 0.15, 0.12, 0.1, 0.08),
         phase_topics: Optional[Dict[str, List[str]]] = None,
         topics_per_session: int = 5,
     ):
@@ -194,9 +196,12 @@ class GenerativeCurriculum:
             "Memorization",
             "Generation",
             "Abstraction",
+            "Engineering Execution & Reliability",
             "Coding Mastery",
+            "Scientific Reasoning & Experimental Design",
             "Drosophila AI Framework",
         ]
+        self.phase_ratios = self._normalize_phase_ratios(self.phase_ratios)
         # Keyed by lowercase phase name; each value is an ordered topic list
         self.phase_topics: Dict[str, List[str]] = phase_topics or {}
         self.topics_per_session = topics_per_session
@@ -204,6 +209,26 @@ class GenerativeCurriculum:
         self._topic_cursors: Dict[str, int] = {
             name.lower(): 0 for name in self.phase_names
         }
+
+    def _normalize_phase_ratios(self, ratios: Tuple[float, ...]) -> Tuple[float, ...]:
+        """
+        Ensure we always have one ratio per phase.
+        If fewer ratios are provided, pad using the last value.
+        If more are provided, truncate.
+        """
+        if not ratios:
+            return tuple(0.3 for _ in self.phase_names)
+
+        if len(ratios) < len(self.phase_names):
+            pad_value = ratios[-1]
+            return tuple(ratios) + tuple(
+                pad_value for _ in range(len(self.phase_names) - len(ratios))
+            )
+
+        if len(ratios) > len(self.phase_names):
+            return tuple(ratios[:len(self.phase_names)])
+
+        return tuple(ratios)
 
     def generate_phase_batch(
         self,
@@ -224,7 +249,11 @@ class GenerativeCurriculum:
         elif self.current_phase == 2:
             examples = self._generate_abstraction_examples(batch_size)
         elif self.current_phase == 3:
+            examples = self._generate_engineering_execution_examples(batch_size)
+        elif self.current_phase == 4:
             examples = self._generate_coding_mastery_examples(batch_size)
+        elif self.current_phase == 5:
+            examples = self._generate_scientific_reasoning_examples(batch_size)
         else:
             examples = self._generate_drosophila_framework_examples(batch_size)
 
@@ -348,6 +377,58 @@ class GenerativeCurriculum:
                 explanation=f"Coding mastery synthesis: {base.explanation}"
             )
             examples.append(coding_mastery)
+
+        return examples
+
+    def _generate_engineering_execution_examples(self, count: int) -> List[TrainingExample]:
+        """Generate execution-focused engineering tasks with verification emphasis."""
+        topics = self._get_topics()
+        examples = []
+
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.88, num_answers=5
+            )
+            engineering_execution = TrainingExample(
+                question=(
+                    f"Engineering execution scenario: {base.question}\n"
+                    "(Plan implementation, propose tests, debug likely failure modes, "
+                    "and justify trade-offs in reliability/security/performance)"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.92,
+                domain=f"engineering_execution_{base.domain}",
+                explanation=f"Execution reliability synthesis: {base.explanation}"
+            )
+            examples.append(engineering_execution)
+
+        return examples
+
+    def _generate_scientific_reasoning_examples(self, count: int) -> List[TrainingExample]:
+        """Generate prompts emphasizing falsifiable scientific reasoning and evidence use."""
+        topics = self._get_topics()
+        examples = []
+
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.93, num_answers=5
+            )
+            scientific_reasoning = TrainingExample(
+                question=(
+                    f"Scientific reasoning challenge: {base.question}\n"
+                    "(State hypotheses, define controls, identify confounders, "
+                    "and provide uncertainty-aware conclusions)"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.96,
+                domain=f"scientific_reasoning_{base.domain}",
+                explanation=f"Scientific method synthesis: {base.explanation}",
+            )
+            examples.append(scientific_reasoning)
 
         return examples
 

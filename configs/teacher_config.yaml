@@ -81,6 +81,19 @@ nlp_curriculum:
     - "agentic NLP: tool use, planning, and reasoning over long contexts"
     - "connecting NLP concepts across the full stack: from tokenisation to emergent reasoning"
 
+  engineering execution & reliability:
+    # Phase 3 — bridge from abstraction to production-grade software execution
+    - "requirements decomposition into milestones, acceptance criteria, and risk registers"
+    - "implementation planning across multi-file codebases with dependency-aware change ordering"
+    - "test strategy design: unit, integration, end-to-end, and property-based test layering"
+    - "debugging workflow from stack traces and logs to root-cause isolation and fix validation"
+    - "regression prevention: contract tests, fixtures, and snapshot strategies"
+    - "secure-by-default engineering: threat modeling, input validation, and auth boundary checks"
+    - "performance reliability: profiling bottlenecks, memory pressure analysis, and latency budgets"
+    - "release hygiene: semantic versioning, rollback plans, and observability baselines"
+    - "CI/CD quality gates: linting, static analysis, tests, and policy checks"
+    - "failure recovery patterns: retries, circuit breakers, idempotency, and graceful degradation"
+
   coding mastery:
     # Phase 4 — complete coding fluency across common programming languages
     - "Python: idiomatic data structures, generators, async I/O, and package design"
@@ -99,8 +112,21 @@ nlp_curriculum:
     - "Secure coding practices: input validation, authz/authn, secrets handling, and dependency risk control"
     - "Cross-language architecture: translating patterns, interoperability, and polyglot system design"
 
+  scientific reasoning & experimental design:
+    # Phase 5 — bridge from coding mastery to domain specialization
+    - "hypothesis formulation with falsifiable predictions and measurable outcomes"
+    - "causal diagrams and confounder analysis for biological and computational experiments"
+    - "experimental controls, randomization, replication, and power-analysis fundamentals"
+    - "evidence grading frameworks and citation-grounded synthesis under conflicting sources"
+    - "uncertainty calibration: confidence intervals, posterior intuition, and failure mode reporting"
+    - "mechanistic pathway reasoning from genotype through molecular interactions to phenotype"
+    - "error taxonomy for scientific claims: correlation/causation mistakes and overgeneralization"
+    - "protocol design quality: reagent constraints, assay feasibility, and reproducibility standards"
+    - "statistical sanity checks: effect sizes, baseline comparisons, and ablation logic"
+    - "scientific communication: concise methods, assumptions, limitations, and next-step experiments"
+
   drosophila ai framework:
-    # Phase 5 — specialized AI training framework for Drosophila genetics and neural wiring
+    # Phase 6 — specialized AI training framework for Drosophila genetics and neural wiring
     - "objective design for a domain-specific Drosophila melanogaster AI assistant with expert-level precision"
     - "hierarchical prerequisites: molecular biology, genetics, developmental biology, neuroscience, behavioral genetics, microbiology, chemistry, and chemical biology"
     - "cellular signaling and gene regulation foundations: RTK/Ras/MAPK, Wnt, Hedgehog, Notch, TGF-beta, chromatin state interpretation"
