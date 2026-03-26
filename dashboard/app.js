@@ -14,6 +14,8 @@ const state = {
   valPpl:          [],
   valSteps:        [],
   logEntries:      [],
+  persistenceKey:  'nero-session-default',
+  historyLoaded:   false,
 };
 
 /* ─── Phase definitions ──────────────────────────────────────── */
@@ -53,6 +55,39 @@ function fmt(n, decimals = 4) {
   return n == null ? '—' : Number(n).toFixed(decimals);
 }
 
+function _sessionKey(kbPath = '') {
+  const suffix = (kbPath || 'default').replace(/[^\w.-]+/g, '_').slice(-80);
+  return `nero-session-${suffix}`;
+}
+
+function _persistState() {
+  try {
+    const payload = {
+      steps: state.steps,
+      trainLoss: state.trainLoss,
+      valSteps: state.valSteps,
+      valLoss: state.valLoss,
+      valPpl: state.valPpl,
+      phase: state.phase,
+    };
+    localStorage.setItem(state.persistenceKey, JSON.stringify(payload));
+  } catch (_) {}
+}
+
+function _restoreState() {
+  try {
+    const raw = localStorage.getItem(state.persistenceKey);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    state.steps = Array.isArray(saved.steps) ? saved.steps : [];
+    state.trainLoss = Array.isArray(saved.trainLoss) ? saved.trainLoss : [];
+    state.valSteps = Array.isArray(saved.valSteps) ? saved.valSteps : [];
+    state.valLoss = Array.isArray(saved.valLoss) ? saved.valLoss : [];
+    state.valPpl = Array.isArray(saved.valPpl) ? saved.valPpl : [];
+    state.phase = saved.phase || null;
+  } catch (_) {}
+}
+
 /* ─── Initialize system ──────────────────────────────────────── */
 async function browseFolder() {
   try {
@@ -76,6 +111,7 @@ async function initializeSystem() {
   const topicsRaw = document.getElementById('f-topics').value.trim();
   const kbPath    = document.getElementById('f-kbpath').value.trim() || './knowledge_base';
   const threshold = parseInt(document.getElementById('f-threshold').value, 10);
+  state.persistenceKey = _sessionKey(kbPath);
 
   const msg = document.getElementById('init-msg');
 
@@ -121,11 +157,43 @@ async function initializeSystem() {
     document.getElementById('btn-stop').disabled      = false;
 
     setStatus('Ready', 'idle');
+    await loadTrainingHistory();
     refreshMetrics();
   } catch (e) {
     msg.textContent = 'Cannot reach NERO API. Is the server running?';
     msg.className   = 'init-msg error';
   }
+}
+
+async function loadTrainingHistory() {
+  try {
+    const res = await fetch(`${API}/training/history`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!Array.isArray(data.entries) || data.entries.length === 0) return;
+
+    state.steps = [];
+    state.trainLoss = [];
+    state.valSteps = [];
+    state.valLoss = [];
+    state.valPpl = [];
+
+    data.entries.forEach(entry => {
+      if (entry.step == null) return;
+      state.steps.push(entry.step);
+      state.trainLoss.push(entry.loss ?? null);
+      if (entry.val_loss != null) {
+        state.valSteps.push(entry.step);
+        state.valLoss.push(entry.val_loss);
+        state.valPpl.push(entry.val_perplexity);
+      }
+      if (entry.phase) state.phase = entry.phase;
+    });
+    state.historyLoaded = true;
+    renderPhases();
+    renderCharts();
+    _persistState();
+  } catch (_) {}
 }
 
 /* ─── Training controls ──────────────────────────────────────── */
@@ -294,6 +362,7 @@ function connectWS() {
         state.valLoss.push(m.val_loss);
         state.valPpl.push(m.val_perplexity);
       }
+      _persistState();
     }
 
     // Phase tracking
@@ -392,6 +461,7 @@ async function refreshMetrics() {
       document.getElementById('init-state').className   = 'init-state ready';
       document.getElementById('btn-start').disabled     = false;
       document.getElementById('btn-stop').disabled      = false;
+      await loadTrainingHistory();
     }
 
     state.training = health.training_active;
@@ -669,6 +739,8 @@ function initTheme() {
 /* ─── Boot ───────────────────────────────────────────────────── */
 (async function init() {
   initTheme();
+  state.persistenceKey = _sessionKey(localStorage.getItem('nero-f-kbpath') || '');
+  _restoreState();
 
   // Auto-save form fields to localStorage as the user types
   ['f-apikey', 'f-baseurl', 'f-model', 'f-kbpath', 'f-threshold', 'f-topics'].forEach(id => {
