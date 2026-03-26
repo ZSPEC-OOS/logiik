@@ -80,3 +80,21 @@ nlp_curriculum:
     - "multi-modal NLP: vision-language models and speech integration"
     - "agentic NLP: tool use, planning, and reasoning over long contexts"
     - "connecting NLP concepts across the full stack: from tokenisation to emergent reasoning"
+
+  coding mastery:
+    # Phase 4 — complete coding fluency across common programming languages
+    - "Python: idiomatic data structures, generators, async I/O, and package design"
+    - "JavaScript and TypeScript: event loop, promises, strict typing, and Node/browser interoperability"
+    - "Java and Kotlin: JVM memory model, concurrency primitives, and enterprise application patterns"
+    - "C and C++: memory safety, ownership patterns, modern standards, and performance profiling"
+    - "C#: .NET runtime internals, async/await pipelines, and API design best practices"
+    - "Go: goroutines, channels, context propagation, and production microservice patterns"
+    - "Rust: ownership, borrowing, lifetimes, trait-based abstractions, and safe systems programming"
+    - "PHP and Ruby: web framework architecture, metaprogramming, and maintainable service code"
+    - "Swift and Objective-C: iOS/macOS app architecture, memory management, and interop"
+    - "SQL and database programming: query optimization, indexing, transactions, and schema design"
+    - "Shell scripting and automation: robust CLI tooling, portability, and idempotent operations"
+    - "Functional languages (Haskell/Elixir/Scala): immutability, type systems, and concurrent workflows"
+    - "Test engineering across languages: unit, integration, property-based, and fuzz testing"
+    - "Secure coding practices: input validation, authz/authn, secrets handling, and dependency risk control"
+    - "Cross-language architecture: translating patterns, interoperability, and polyglot system design"
