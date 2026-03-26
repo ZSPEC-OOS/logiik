@@ -167,7 +167,9 @@ class GenerativeCurriculum:
         teacher_orchestrator,
         tokenizer,
         topics_description: str = "",
-        phase_ratios: Tuple[float, float, float] = (0.4, 0.4, 0.2)
+        phase_ratios: Tuple[float, float, float] = (0.4, 0.4, 0.2),
+        phase_topics: Optional[Dict[str, List[str]]] = None,
+        topics_per_session: int = 5,
     ):
         self.teacher = teacher_orchestrator
         self.tokenizer = tokenizer
@@ -175,6 +177,13 @@ class GenerativeCurriculum:
         self.phase_ratios = phase_ratios
         self.current_phase = 0
         self.phase_names = ["Memorization", "Generation", "Abstraction"]
+        # Keyed by lowercase phase name; each value is an ordered topic list
+        self.phase_topics: Dict[str, List[str]] = phase_topics or {}
+        self.topics_per_session = topics_per_session
+        # Per-phase cursor: tracks which topic to serve next in each phase
+        self._topic_cursors: Dict[str, int] = {
+            name.lower(): 0 for name in self.phase_names
+        }
 
     def generate_phase_batch(
         self,
@@ -211,10 +220,25 @@ class GenerativeCurriculum:
         )
 
     def _get_topics(self) -> List[str]:
-        """Return topic list derived from the free-form description."""
-        if self.topics_description.strip():
-            return [self.topics_description]
-        return ["general_knowledge"]
+        """
+        Return the next slice of topics for the current phase, cycling through
+        the phase_topics list.  Falls back to topics_description or a generic
+        default when no structured topic list is configured.
+        """
+        phase_key = self.phase_names[self.current_phase].lower()
+        topics = self.phase_topics.get(phase_key, [])
+
+        if not topics:
+            # Fallback: treat the free-form description as a single topic
+            return [self.topics_description] if self.topics_description.strip() else ["general_knowledge"]
+
+        n = len(topics)
+        start = self._topic_cursors[phase_key]
+        # Wrap-around slice so we always return topics_per_session items
+        selected = [topics[(start + i) % n] for i in range(self.topics_per_session)]
+        # Advance cursor for the next batch (wraps so all topics are eventually covered)
+        self._topic_cursors[phase_key] = (start + self.topics_per_session) % n
+        return selected
 
     def _generate_generative_examples(
         self, topics: List[str], count: int
@@ -254,11 +278,12 @@ class GenerativeCurriculum:
         return False
 
     def _generate_abstraction_examples(self, count: int) -> List[TrainingExample]:
-        """Generate cross-domain synthesis problems from the topics description."""
-        topic = self.topics_description or "general_knowledge"
+        """Generate cross-domain synthesis problems, cycling through abstraction topics."""
+        topics = self._get_topics()
         examples = []
 
-        for _ in range(count):
+        for i in range(count):
+            topic = topics[i % len(topics)]
             base = self.teacher.teachers[0].generate_training_example(
                 topic, difficulty=0.8, num_answers=5
             )

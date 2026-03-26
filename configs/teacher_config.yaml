@@ -21,3 +21,62 @@ teacher:
       - originality
       - coherence
     min_pass_score: 0.7
+
+# Zero-to-complete NLP curriculum, split by training phase.
+# Topics within each phase are cycled in order across batches.
+# The teacher generates fresh Q+A for each topic dynamically —
+# the question bank dedup system prevents repeated questions.
+nlp_curriculum:
+  memorization:
+    # Phase 0 — foundations: what language IS and how it's represented
+    - "text tokenization: splitting raw text into tokens, subwords, and characters"
+    - "character encoding, Unicode, and byte-pair encoding (BPE)"
+    - "vocabulary building, word frequency analysis, and Zipf's law"
+    - "stop words, stemming, and lemmatization"
+    - "regular expressions and pattern matching for text processing"
+    - "bag-of-words and TF-IDF text representations"
+    - "edit distance, string similarity, and fuzzy matching"
+    - "n-gram language models and maximum likelihood estimation"
+    - "perplexity as a language model evaluation metric"
+    - "parts-of-speech tagging and morphological analysis"
+    - "named entity recognition: persons, locations, organizations"
+    - "dependency parsing and constituency parsing"
+    - "co-reference resolution and anaphora"
+    - "sentence boundary detection and text segmentation"
+    - "corpus statistics: type-token ratio, hapax legomena, zipfian distributions"
+
+  generation:
+    # Phase 1 — neural NLP: learned representations and sequence models
+    - "word embeddings: word2vec skip-gram and CBOW training objectives"
+    - "GloVe global vectors and FastText subword embeddings"
+    - "embedding space geometry: analogies, nearest neighbours, bias"
+    - "recurrent neural networks for sequence modelling"
+    - "vanishing gradients and why LSTMs and GRUs solve them"
+    - "bidirectional RNNs and sequence labelling tasks"
+    - "sequence-to-sequence models with encoder-decoder architecture"
+    - "attention mechanisms: additive and dot-product attention"
+    - "the Transformer architecture: multi-head self-attention and positional encoding"
+    - "BERT: masked language modelling and next-sentence prediction pre-training"
+    - "GPT: autoregressive language modelling and causal attention"
+    - "text classification, sentiment analysis, and topic modelling"
+    - "machine translation: BLEU score and evaluation challenges"
+    - "extractive and abstractive text summarisation"
+    - "question answering: span extraction vs generative approaches"
+
+  abstraction:
+    # Phase 2 — advanced and cross-cutting: reasoning, adaptation, evaluation
+    - "transfer learning: feature extraction vs fine-tuning strategies"
+    - "parameter-efficient fine-tuning: LoRA, prefix tuning, adapters"
+    - "prompt engineering: zero-shot, few-shot, and chain-of-thought prompting"
+    - "instruction tuning and reinforcement learning from human feedback (RLHF)"
+    - "knowledge distillation: soft targets, temperature scaling, and student-teacher training"
+    - "retrieval-augmented generation: dense passage retrieval and RAG pipelines"
+    - "evaluation metrics beyond BLEU: ROUGE, BERTScore, and human evaluation"
+    - "cross-lingual models: mBERT, XLM-R, and zero-shot cross-lingual transfer"
+    - "emergent capabilities in large language models and scaling laws"
+    - "hallucination, factuality, and grounding in language models"
+    - "bias, fairness, and toxicity in NLP systems"
+    - "efficient inference: quantisation, pruning, and speculative decoding"
+    - "multi-modal NLP: vision-language models and speech integration"
+    - "agentic NLP: tool use, planning, and reasoning over long contexts"
+    - "connecting NLP concepts across the full stack: from tokenisation to emergent reasoning"
