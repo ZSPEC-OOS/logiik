@@ -229,7 +229,7 @@ async def training_loop():
     _training_status = ""
     _current_topics = []
 
-    BATCH_SIZE = 8
+    BATCH_SIZE = 1
     GRAD_ACCUM_STEPS = 4
     LR = 2e-4
     WARMUP_STEPS = 100
@@ -275,7 +275,7 @@ async def training_loop():
             loop = asyncio.get_event_loop()
             current_dataset = await loop.run_in_executor(
                 None,
-                lambda: curriculum.generate_phase_batch(batch_size=5, question_bank=question_bank)
+                lambda: curriculum.generate_phase_batch(batch_size=1, question_bank=question_bank)
             )
             _current_topics = curriculum._get_topics()
             _training_status = f"Training — {phase_name} · topics: {', '.join(_current_topics[:2])}{'…' if len(_current_topics) > 2 else ''}"
