@@ -138,3 +138,9 @@ The current progression (Memorization → Generation → Abstraction → Coding 
 ## Final Conclusion
 If the objective is **reliable** achievement of current Phases 4 and 5, the present 5-phase structure is **not fully sufficient**.  
 You should add the two bridge phases above before expecting consistent performance at the coding mastery and Drosophila framework levels.
+
+## Implementation Status
+The recommended bridge phases have now been incorporated into the active curriculum order in:
+- `cognita/training/curriculum.py`
+- `configs/model_config.yaml`
+- `configs/teacher_config.yaml`
