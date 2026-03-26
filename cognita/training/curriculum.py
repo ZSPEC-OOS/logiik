@@ -36,25 +36,32 @@ class CurriculumDataset(Dataset):
         max_length: int = 512,
         generative_ratio: float = 0.3  # 30% examples for generative training
     ):
-        self.examples = examples
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.generative_ratio = generative_ratio
 
-        # Separate examples for memorization vs generation
+        # Expand each TrainingExample into one item per answer so the model
+        # learns P(a_i | q) independently for every answer in the set.
+        self.items: List[Tuple[TrainingExample, int]] = []
+        for ex in examples:
+            for ans_idx in range(len(ex.answers)):
+                self.items.append((ex, ans_idx))
+
+        # Retain original examples list for phase splitting
+        self.examples = examples
         split_point = int(len(examples) * (1 - generative_ratio))
         self.memorization_examples = examples[:split_point]
         self.generative_examples = examples[split_point:]
 
     def __len__(self):
-        return len(self.examples)
+        return len(self.items)
 
     def __getitem__(self, idx) -> ProcessedExample:
-        example = self.examples[idx]
+        example, ans_idx = self.items[idx]
 
         # Build question prefix and full prompt separately so we can mask the prefix
         question_prefix = self._format_question_prefix(example)
-        formatted_text = self._format_training_prompt(example)
+        formatted_text = self._format_training_prompt(example, ans_idx)
 
         # Tokenize full sequence
         encoding = self.tokenizer(
@@ -79,8 +86,8 @@ class CurriculumDataset(Dataset):
         labels[labels == self.tokenizer.pad_token_id] = -100
         labels[:, :prefix_len] = -100
 
-        # Generate soft teacher targets (simulated here, would come from teacher API)
-        teacher_logits = self._simulate_teacher_logits(example)
+        # Generate soft teacher targets for this specific answer
+        teacher_logits = self._simulate_teacher_logits(example, ans_idx)
 
         # Weight by difficulty
         weight = 1.0 + example.difficulty  # Harder examples get more weight
@@ -94,44 +101,31 @@ class CurriculumDataset(Dataset):
         )
 
     def _format_question_prefix(self, example: TrainingExample) -> str:
-        """Return only the question/context prefix — these tokens are masked from the loss."""
-        prefix = f"Question: {example.question}\n\nPossible Answers:\n"
-        for i, answer in enumerate(example.answers):
-            prefix += f"{i + 1}. {answer}\n"
-        prefix += "\nBest Answer: "
-        return prefix
+        """Return only the question prefix — these tokens are masked from the loss."""
+        return f"Question: {example.question}\nAnswer:"
 
-    def _format_training_prompt(self, example: TrainingExample) -> str:
+    def _format_training_prompt(self, example: TrainingExample, ans_idx: int) -> str:
         """
-        Format: Question + enumerated answers + correct answer indicator.
-        Loss is computed only on the answer text and explanation (not the prefix).
+        Format a single (q, a_i) pair.
+        Loss is computed only on the answer tokens (after 'Answer:').
         """
-        prompt = f"Question: {example.question}\n\nPossible Answers:\n"
+        return f"Question: {example.question}\nAnswer: {example.answers[ans_idx]}"
 
-        for i, answer in enumerate(example.answers):
-            marker = " [CORRECT]" if i in example.correct_indices else ""
-            prompt += f"{i + 1}. {answer}{marker}\n"
-
-        prompt += f"\nBest Answer: {example.answers[example.correct_indices[0]]}"
-        prompt += f"\nExplanation: {example.explanation}"
-
-        return prompt
-
-    def _simulate_teacher_logits(self, example: TrainingExample) -> torch.Tensor:
+    def _simulate_teacher_logits(self, example: TrainingExample, ans_idx: int) -> torch.Tensor:
         """
-        Create soft target distribution over vocabulary
-        representing teacher's knowledge.
+        Create a per-position soft target distribution over vocabulary for
+        the answer tokens of this specific (q, a_i) pair.
         """
         vocab_size = self.tokenizer.vocab_size
-        logits = torch.zeros(vocab_size)
+        answer_tokens = self.tokenizer.encode(
+            example.answers[ans_idx], add_special_tokens=False
+        )
+        seq_len = len(answer_tokens)
+        logits = torch.zeros(seq_len, vocab_size)
 
-        # Boost probability for correct answer tokens
-        correct_answer = example.answers[example.correct_indices[0]]
-        tokens = self.tokenizer.encode(correct_answer)
-
-        for token_id in tokens:
+        for pos, token_id in enumerate(answer_tokens):
             if token_id < vocab_size:
-                logits[token_id] = 2.0  # Higher logit for correct tokens
+                logits[pos, token_id] = 2.0  # Peak at the correct next token
 
         return logits
 
