@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import List, Optional, Dict
 
+import yaml
+
 import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
@@ -45,6 +47,23 @@ training_complete = False
 _topics_description: str = ""
 _repeat_threshold: int = 75
 _final_report: Optional[Dict] = None
+_nlp_phase_topics: Dict[str, List[str]] = {}
+_topics_per_session: int = 5
+
+# Load NLP curriculum from teacher_config.yaml on startup
+_TEACHER_CONFIG_PATH = Path(__file__).parents[2] / "configs" / "teacher_config.yaml"
+
+def _load_nlp_curriculum() -> tuple[Dict[str, List[str]], int]:
+    """Read phase_topics and topics_per_session from teacher_config.yaml."""
+    if not _TEACHER_CONFIG_PATH.exists():
+        return {}, 5
+    with open(_TEACHER_CONFIG_PATH) as f:
+        cfg = yaml.safe_load(f) or {}
+    phase_topics = cfg.get("nlp_curriculum", {})
+    topics_per_session = (
+        cfg.get("teacher", {}).get("curriculum", {}).get("topics_per_session", 5)
+    )
+    return phase_topics, topics_per_session
 
 
 class TrainingConfig(BaseModel):
@@ -93,6 +112,7 @@ async def initialize_system(config: TrainingConfig):
     """Initialize brain, teacher, knowledge base, and question bank."""
     global brain, teacher, knowledge_manager, question_bank
     global _topics_description, _repeat_threshold, training_complete, _final_report
+    global _nlp_phase_topics, _topics_per_session
 
     try:
         # Firebase is always active — config is hardcoded in firebase_memory.py
@@ -121,6 +141,7 @@ async def initialize_system(config: TrainingConfig):
         _repeat_threshold = config.question_repeat_threshold
         training_complete = False
         _final_report = None
+        _nlp_phase_topics, _topics_per_session = _load_nlp_curriculum()
 
         # Load existing knowledge if available
         kb_summary = knowledge_manager.get_attachable_knowledge_summary()
@@ -214,6 +235,8 @@ async def training_loop():
         teacher,
         brain.tokenizer,
         topics_description=_topics_description,
+        phase_topics=_nlp_phase_topics,
+        topics_per_session=_topics_per_session,
     )
 
     optimizer = AdamW(
