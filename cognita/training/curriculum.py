@@ -52,11 +52,11 @@ class CurriculumDataset(Dataset):
     def __getitem__(self, idx) -> ProcessedExample:
         example = self.examples[idx]
 
-        # Format: Question + [Possible Answers] + [Correct Answer Emphasis]
-        # This structure teaches the model to select AND generate
+        # Build question prefix and full prompt separately so we can mask the prefix
+        question_prefix = self._format_question_prefix(example)
         formatted_text = self._format_training_prompt(example)
 
-        # Tokenize
+        # Tokenize full sequence
         encoding = self.tokenizer(
             formatted_text,
             max_length=self.max_length,
@@ -65,9 +65,19 @@ class CurriculumDataset(Dataset):
             return_tensors="pt"
         )
 
-        # Create labels (shifted input_ids for causal LM)
+        # Measure question prefix length (without padding/special tokens)
+        prefix_ids = self.tokenizer(
+            question_prefix,
+            add_special_tokens=False,
+            return_tensors="pt"
+        )["input_ids"]
+        prefix_len = prefix_ids.shape[1]
+
+        # Create labels: mask padding AND question prefix tokens
+        # Loss is computed only on answer tokens
         labels = encoding["input_ids"].clone()
         labels[labels == self.tokenizer.pad_token_id] = -100
+        labels[:, :prefix_len] = -100
 
         # Generate soft teacher targets (simulated here, would come from teacher API)
         teacher_logits = self._simulate_teacher_logits(example)
@@ -83,10 +93,18 @@ class CurriculumDataset(Dataset):
             weight=weight
         )
 
+    def _format_question_prefix(self, example: TrainingExample) -> str:
+        """Return only the question/context prefix — these tokens are masked from the loss."""
+        prefix = f"Question: {example.question}\n\nPossible Answers:\n"
+        for i, answer in enumerate(example.answers):
+            prefix += f"{i + 1}. {answer}\n"
+        prefix += "\nBest Answer: "
+        return prefix
+
     def _format_training_prompt(self, example: TrainingExample) -> str:
         """
         Format: Question + enumerated answers + correct answer indicator.
-        This teaches the model the structure of possible responses.
+        Loss is computed only on the answer text and explanation (not the prefix).
         """
         prompt = f"Question: {example.question}\n\nPossible Answers:\n"
 
