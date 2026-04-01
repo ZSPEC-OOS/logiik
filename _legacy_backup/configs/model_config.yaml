@@ -1,0 +1,58 @@
+# NERO Model Configuration
+
+model:
+  base_model: "microsoft/DialoGPT-medium"
+  use_lora: true
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+  generative_head:
+    enabled: true
+    hidden_dim: 768
+    temperature: 0.7
+
+training:
+  batch_size: 8
+  learning_rate: 0.0002
+  warmup_steps: 100
+  max_seq_length: 512
+  gradient_accumulation_steps: 4
+  knowledge_distillation:
+    temperature: 2.0
+    alpha: 0.3  # Weight for distillation loss vs hard labels
+
+storage:
+  knowledge_base_path: "./knowledge_base"
+  checkpoint_interval: 100  # Steps
+  max_checkpoints: 5  # Keep only last N checkpoints
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+curriculum:
+  phases:
+    - name: "memorization"
+      duration: 0.2
+      generative_ratio: 0.1
+    - name: "generation"
+      duration: 0.2
+      generative_ratio: 0.5
+    - name: "abstraction"
+      duration: 0.15
+      generative_ratio: 0.8
+    - name: "engineering_execution_reliability"
+      duration: 0.15
+      generative_ratio: 0.85
+    - name: "coding_mastery"
+      duration: 0.12
+      generative_ratio: 0.9
+    - name: "scientific_reasoning_experimental_design"
+      duration: 0.1
+      generative_ratio: 0.93
+    - name: "drosophila_ai_framework"
+      duration: 0.08
+      generative_ratio: 0.95
+  structure:
+    min_answers: 5
+    max_answers: 10
+    difficulty_progression: "linear"  # linear, exponential, adaptive

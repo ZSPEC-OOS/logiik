@@ -1,0 +1,144 @@
+# Teacher AI API Configuration — Kimi K2.5
+
+teacher:
+  # --- Fill in your Kimi K2.5 credentials ---
+  model_id: ""       # e.g. kimi-k2-5
+  base_url: ""       # e.g. https://api.moonshot.cn/v1
+  api_key_env: "TEACHER_API_KEY"
+  # ------------------------------------------
+  generation:
+    temperature: 1
+    max_tokens: 500
+    response_format: "json"
+  curriculum:
+    topics_per_session: 1
+    examples_per_topic: 20
+    difficulty_range: [0.1, 0.9]
+  evaluation:
+    criteria:
+      - accuracy
+      - completeness
+      - originality
+      - coherence
+    min_pass_score: 0.7
+
+# Zero-to-complete NLP curriculum, split by training phase.
+# Topics within each phase are cycled in order across batches.
+# The teacher generates fresh Q+A for each topic dynamically —
+# the question bank dedup system prevents repeated questions.
+nlp_curriculum:
+  memorization:
+    # Phase 0 — foundations: what language IS and how it's represented
+    - "text tokenization: splitting raw text into tokens, subwords, and characters"
+    - "character encoding, Unicode, and byte-pair encoding (BPE)"
+    - "vocabulary building, word frequency analysis, and Zipf's law"
+    - "stop words, stemming, and lemmatization"
+    - "regular expressions and pattern matching for text processing"
+    - "bag-of-words and TF-IDF text representations"
+    - "edit distance, string similarity, and fuzzy matching"
+    - "n-gram language models and maximum likelihood estimation"
+    - "perplexity as a language model evaluation metric"
+    - "parts-of-speech tagging and morphological analysis"
+    - "named entity recognition: persons, locations, organizations"
+    - "dependency parsing and constituency parsing"
+    - "co-reference resolution and anaphora"
+    - "sentence boundary detection and text segmentation"
+    - "corpus statistics: type-token ratio, hapax legomena, zipfian distributions"
+
+  generation:
+    # Phase 1 — neural NLP: learned representations and sequence models
+    - "word embeddings: word2vec skip-gram and CBOW training objectives"
+    - "GloVe global vectors and FastText subword embeddings"
+    - "embedding space geometry: analogies, nearest neighbours, bias"
+    - "recurrent neural networks for sequence modelling"
+    - "vanishing gradients and why LSTMs and GRUs solve them"
+    - "bidirectional RNNs and sequence labelling tasks"
+    - "sequence-to-sequence models with encoder-decoder architecture"
+    - "attention mechanisms: additive and dot-product attention"
+    - "the Transformer architecture: multi-head self-attention and positional encoding"
+    - "BERT: masked language modelling and next-sentence prediction pre-training"
+    - "GPT: autoregressive language modelling and causal attention"
+    - "text classification, sentiment analysis, and topic modelling"
+    - "machine translation: BLEU score and evaluation challenges"
+    - "extractive and abstractive text summarisation"
+    - "question answering: span extraction vs generative approaches"
+
+  abstraction:
+    # Phase 2 — advanced and cross-cutting: reasoning, adaptation, evaluation
+    - "transfer learning: feature extraction vs fine-tuning strategies"
+    - "parameter-efficient fine-tuning: LoRA, prefix tuning, adapters"
+    - "prompt engineering: zero-shot, few-shot, and chain-of-thought prompting"
+    - "instruction tuning and reinforcement learning from human feedback (RLHF)"
+    - "knowledge distillation: soft targets, temperature scaling, and student-teacher training"
+    - "retrieval-augmented generation: dense passage retrieval and RAG pipelines"
+    - "evaluation metrics beyond BLEU: ROUGE, BERTScore, and human evaluation"
+    - "cross-lingual models: mBERT, XLM-R, and zero-shot cross-lingual transfer"
+    - "emergent capabilities in large language models and scaling laws"
+    - "hallucination, factuality, and grounding in language models"
+    - "bias, fairness, and toxicity in NLP systems"
+    - "efficient inference: quantisation, pruning, and speculative decoding"
+    - "multi-modal NLP: vision-language models and speech integration"
+    - "agentic NLP: tool use, planning, and reasoning over long contexts"
+    - "connecting NLP concepts across the full stack: from tokenisation to emergent reasoning"
+
+  engineering execution & reliability:
+    # Phase 3 — bridge from abstraction to production-grade software execution
+    - "requirements decomposition into milestones, acceptance criteria, and risk registers"
+    - "implementation planning across multi-file codebases with dependency-aware change ordering"
+    - "test strategy design: unit, integration, end-to-end, and property-based test layering"
+    - "debugging workflow from stack traces and logs to root-cause isolation and fix validation"
+    - "regression prevention: contract tests, fixtures, and snapshot strategies"
+    - "secure-by-default engineering: threat modeling, input validation, and auth boundary checks"
+    - "performance reliability: profiling bottlenecks, memory pressure analysis, and latency budgets"
+    - "release hygiene: semantic versioning, rollback plans, and observability baselines"
+    - "CI/CD quality gates: linting, static analysis, tests, and policy checks"
+    - "failure recovery patterns: retries, circuit breakers, idempotency, and graceful degradation"
+
+  coding mastery:
+    # Phase 4 — complete coding fluency across common programming languages
+    - "Python: idiomatic data structures, generators, async I/O, and package design"
+    - "JavaScript and TypeScript: event loop, promises, strict typing, and Node/browser interoperability"
+    - "Java and Kotlin: JVM memory model, concurrency primitives, and enterprise application patterns"
+    - "C and C++: memory safety, ownership patterns, modern standards, and performance profiling"
+    - "C#: .NET runtime internals, async/await pipelines, and API design best practices"
+    - "Go: goroutines, channels, context propagation, and production microservice patterns"
+    - "Rust: ownership, borrowing, lifetimes, trait-based abstractions, and safe systems programming"
+    - "PHP and Ruby: web framework architecture, metaprogramming, and maintainable service code"
+    - "Swift and Objective-C: iOS/macOS app architecture, memory management, and interop"
+    - "SQL and database programming: query optimization, indexing, transactions, and schema design"
+    - "Shell scripting and automation: robust CLI tooling, portability, and idempotent operations"
+    - "Functional languages (Haskell/Elixir/Scala): immutability, type systems, and concurrent workflows"
+    - "Test engineering across languages: unit, integration, property-based, and fuzz testing"
+    - "Secure coding practices: input validation, authz/authn, secrets handling, and dependency risk control"
+    - "Cross-language architecture: translating patterns, interoperability, and polyglot system design"
+
+  scientific reasoning & experimental design:
+    # Phase 5 — bridge from coding mastery to domain specialization
+    - "hypothesis formulation with falsifiable predictions and measurable outcomes"
+    - "causal diagrams and confounder analysis for biological and computational experiments"
+    - "experimental controls, randomization, replication, and power-analysis fundamentals"
+    - "evidence grading frameworks and citation-grounded synthesis under conflicting sources"
+    - "uncertainty calibration: confidence intervals, posterior intuition, and failure mode reporting"
+    - "mechanistic pathway reasoning from genotype through molecular interactions to phenotype"
+    - "error taxonomy for scientific claims: correlation/causation mistakes and overgeneralization"
+    - "protocol design quality: reagent constraints, assay feasibility, and reproducibility standards"
+    - "statistical sanity checks: effect sizes, baseline comparisons, and ablation logic"
+    - "scientific communication: concise methods, assumptions, limitations, and next-step experiments"
+
+  drosophila ai framework:
+    # Phase 6 — specialized AI training framework for Drosophila genetics and neural wiring
+    - "objective design for a domain-specific Drosophila melanogaster AI assistant with expert-level precision"
+    - "hierarchical prerequisites: molecular biology, genetics, developmental biology, neuroscience, behavioral genetics, microbiology, chemistry, and chemical biology"
+    - "cellular signaling and gene regulation foundations: RTK/Ras/MAPK, Wnt, Hedgehog, Notch, TGF-beta, chromatin state interpretation"
+    - "chemical biology integration: enzyme kinetics, small-molecule probe design, click chemistry, mass spectrometry, and NMR-driven assay interpretation"
+    - "microbiology and host-microbe genetics: Toll and IMD pathways, microbiome dynamics, metagenomics, and pathogenesis models in fly systems"
+    - "core axon guidance mechanisms in fly CNS: Slit/Robo midline repulsion, Commissureless regulation, and attraction-repulsion state switching"
+    - "Slit proteolytic processing and functional diversification: Slit-N and Slit-C signaling impacts on longitudinal growth and branching"
+    - "Dscam1 isoform biology: alternative splicing, receptor complexes with Robo1, Elav-linked regulation, and branch specificity factors"
+    - "complementary guidance pathways: Frazzled/Netrin signaling, apoptotic crosstalk, receptor tyrosine kinase modules, and enteric development"
+    - "Drosophila genetic toolkit integration: EMS/P-element screens, GAL4/UAS, LexA, Q, FLP/FRT, MARCM, and CRISPR engineering"
+    - "whole-subject Drosophila expansion: developmental genetics, connectomics, behavioral assay design, and disease-model reasoning"
+    - "multimodal training architecture: layered RAG corpus, parameter-efficient adaptation, graph modules for gene-protein-circuit networks"
+    - "training objectives: genotype-to-phenotype-to-mechanism reasoning chains, contrastive pathway discrimination, zero-shot experimental simulation"
+    - "evaluation framework: perplexity, interaction prediction accuracy, protocol-generation F1, and expert human scoring rubrics"
+    - "deliverables planning: reproducible implementation timeline, cost estimate, API or weights delivery, and citation-grounded documentation"

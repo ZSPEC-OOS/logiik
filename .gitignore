@@ -43,3 +43,13 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Logiik secrets and local data
+.env
+logiik/config/secrets/
+knowledge_base/
+logiik/data/
+*.pt
+*.pth
+*.npy
+firebase_service_account.json

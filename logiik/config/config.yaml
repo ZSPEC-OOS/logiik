@@ -1,0 +1,198 @@
+# ─── Logiik Master Configuration ───────────────────────────────────────────
+
+project:
+  name: "logiik"
+  version: "0.1.0"
+  legacy_name: "nero"
+
+# ─── Embedding Model ────────────────────────────────────────────────────────
+embeddings:
+  model: "allenai/specter2"
+  dimension: 768
+  batch_size: 16
+  device: "auto"  # auto = cuda if available, else cpu
+
+# ─── Vector Database (Pinecone) ─────────────────────────────────────────────
+vector_db:
+  backend: "pinecone"        # pinecone | faiss (faiss = local fallback)
+  pinecone:
+    api_key: "${PINECONE_API_KEY}"
+    host: "${PINECONE_HOST}"
+    index_name: "${PINECONE_INDEX}"
+    dimension: 768
+    metric: "cosine"
+  faiss:
+    index_path: "./logiik/data/faiss_index"
+    dimension: 768
+
+# ─── Firebase (REST API — no Admin SDK) ─────────────────────────────────────
+firebase:
+  project: "${FIREBASE_PROJECT}"
+  api_key: "${FIREBASE_API_KEY}"
+  base_url: "https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents"
+  collections:
+    knowledge: "logiik/knowledge"
+    checkpoints: "logiik/memory/checkpoints"
+    sessions: "logiik/memory/sessions"
+    embeddings: "logiik/memory/embeddings"
+    phase8_images: "logiik/phase8/images"
+    phase9_chunks: "logiik/phase9/chunks"
+
+# ─── Redis Cache ─────────────────────────────────────────────────────────────
+cache:
+  enabled: false             # flip to true when Redis is configured
+  host: "${REDIS_HOST}"
+  port: 6379
+  password: "${REDIS_PASSWORD}"
+  ttl_seconds: 3600
+
+# ─── AWS S3 (deferred — not yet configured) ──────────────────────────────────
+s3:
+  enabled: false
+  bucket_knowledge: "${S3_BUCKET_KNOWLEDGE}"
+  bucket_models: "${S3_BUCKET_MODELS}"
+  region: "${AWS_REGION}"
+
+# ─── Model ───────────────────────────────────────────────────────────────────
+model:
+  base_model: "microsoft/DialoGPT-medium"
+  # NOTE: Flag for pre-training swap to a scientific base model
+  use_lora: true
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+  generative_head:
+    enabled: true
+    hidden_dim: 768
+    temperature: 0.7
+
+# ─── Training ────────────────────────────────────────────────────────────────
+training:
+  batch_size: 8
+  learning_rate: 0.0002
+  warmup_steps: 100
+  max_seq_length: 512
+  gradient_accumulation_steps: 4
+  knowledge_distillation:
+    temperature: 2.0
+    alpha: 0.3
+  validation:
+    val_every_steps: 5
+    plateau_patience: 3
+    plateau_min_delta: 0.01
+  checkpointing:
+    interval_steps: 100
+    max_checkpoints: 5
+
+# ─── Storage Paths ───────────────────────────────────────────────────────────
+storage:
+  knowledge_base_path: "./knowledge_base"
+  embedding_model: "allenai/specter2"
+
+# ─── Ingestion ───────────────────────────────────────────────────────────────
+ingestion:
+  simple_mode: true
+  ideal_small_batch: 100
+  full_mode:
+    chunk_size: 1024
+    overlap: 256
+    batch_size: 20
+  lite_mode:
+    chunk_size: 512
+    overlap: 128
+    batch_size: 5
+  deduplication_threshold: 0.90
+  image_types:
+    - "microscopy"
+    - "diagram"
+    - "plot"
+    - "chart"
+    - "chemical_structure"
+    - "other"
+
+# ─── Phase Completion Monitor ────────────────────────────────────────────────
+phase_monitor:
+  coverage_ratio: 0.95
+  saturation_score: 0.90
+  max_iterations: 1000
+
+# ─── GPU Session Manager ─────────────────────────────────────────────────────
+session:
+  model_source: "local"      # local | s3 (s3 deferred until bucket configured)
+  model_path: "./knowledge_base"
+  s3_model_key: "${S3_MODEL_KEY}"
+  auto_expiry_minutes: 30
+  api_port: 5000
+
+# ─── Curriculum Phases ───────────────────────────────────────────────────────
+curriculum:
+  phases:
+    - id: 1
+      name: "memorization"
+      generative_ratio: 0.1
+      duration: 0.20
+    - id: 2
+      name: "generation"
+      generative_ratio: 0.5
+      duration: 0.20
+    - id: 3
+      name: "abstraction"
+      generative_ratio: 0.8
+      duration: 0.15
+    - id: 4
+      name: "engineering_execution_reliability"
+      generative_ratio: 0.85
+      duration: 0.15
+    - id: 5
+      name: "coding_mastery"
+      generative_ratio: 0.90
+      duration: 0.12
+    - id: 6
+      name: "scientific_reasoning_experimental_design"
+      generative_ratio: 0.93
+      duration: 0.10
+    - id: 7
+      name: "niche_scientific_reasoning"
+      generative_ratio: 0.94
+      duration: 0.08
+      # NOTE: Replaces legacy "drosophila_ai_framework" phase
+      teacher_student: true
+      correctness_threshold: 0.90
+    - id: 8
+      name: "scientific_image_analysis"
+      generative_ratio: 0.94
+      duration: null          # runs until phase8_image_db saturated
+    - id: 9
+      name: "pdf_textbook_ingestion"
+      generative_ratio: 0.95
+      duration: null          # runs until ingestion queue empty
+    - id: 10
+      name: "synthetic_judgment"
+      generative_ratio: 0.95
+      duration: null
+      rl_backend: "ppo_trl"
+      phase10_stages:
+        - id: 1
+          name: "causal_reasoning"
+        - id: 2
+          name: "consistency"
+        - id: 3
+          name: "calibration"
+        - id: 4
+          name: "abstention"
+        - id: 5
+          name: "belief_revision"
+        - id: 6
+          name: "integrated_scientific_problems"
+
+# ─── Dashboard / API ─────────────────────────────────────────────────────────
+api:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins: ["*"]
+
+dashboard:
+  refresh_interval_seconds: 2
+  gpu_alert_vram_threshold_gb: 20
