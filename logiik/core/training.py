@@ -33,7 +33,7 @@ from torch.utils.data import DataLoader, Dataset
 from logiik.curriculum.phases import PHASES, get_phase, PhaseConfig
 from logiik.storage.text_store import TextStore
 from logiik.embeddings.embed import get_embedder
-from logiik.utils.logging import get_logger
+from logiik.utils.logging import get_logger, log_event
 from logiik.utils.helpers import validate_answer, compute_saturation
 
 logger = get_logger("core.training")
@@ -809,3 +809,291 @@ class GenerativeCurriculum:
     def phase7_loop(self) -> Phase7TeacherStudentLoop:
         """Access Phase 7 teacher-student loop directly."""
         return self._phase7_loop
+
+
+# ─── Phase Completion Monitor ─────────────────────────────────────────────────
+
+class PhaseCompletionMonitor:
+    """
+    Objective, data-driven phase completion monitor.
+
+    Combines two signals to determine when a curriculum phase is complete:
+      1. Prompt coverage ratio  — breadth: what fraction of phase prompts
+                                  have received valid student answers.
+      2. Semantic saturation    — depth: are student outputs becoming
+                                  semantically redundant (high similarity
+                                  to recent outputs = knowledge plateau).
+
+    Both signals must exceed their configured thresholds simultaneously
+    before a phase is declared complete.
+
+    This runs alongside the existing validation-loss plateau detection
+    in the training loop (server.py). Phase advancement requires EITHER:
+      - Plateau detection triggers (val_loss stagnant for N checks), OR
+      - PhaseCompletionMonitor declares complete (coverage + saturation).
+    Whichever occurs first advances the phase.
+
+    Usage:
+        monitor = PhaseCompletionMonitor(phase_config, phase_prompts)
+        # After each student answer:
+        monitor.update(answer_text, answer_embedding)
+        if monitor.is_complete():
+            curriculum.advance_phase()
+        metrics = monitor.get_metrics()
+    """
+
+    def __init__(
+        self,
+        phase_config: PhaseConfig,
+        phase_prompts: List[Dict],
+        thresholds: Optional[Dict] = None,
+    ):
+        """
+        Args:
+            phase_config:   PhaseConfig for the current phase.
+            phase_prompts:  List of prompt dicts, each must contain
+                            a unique 'id' field.
+                            e.g. [{'id': 'p1', 'text': '...'}, ...]
+            thresholds:     Override default thresholds. Keys:
+                            'coverage_ratio', 'saturation_score',
+                            'max_iterations'.
+        """
+        self._phase_config = phase_config
+        self._phase_prompts = phase_prompts
+        self._total_prompts = max(len(phase_prompts), 1)
+
+        # Merge thresholds: phase_config.completion_criteria
+        # → config.yaml phase_monitor → caller override
+        from logiik.config import CONFIG
+        cfg_thresholds = CONFIG.get("phase_monitor", {})
+        phase_thresholds = phase_config.completion_criteria or {}
+
+        self._thresholds = {
+            "coverage_ratio": phase_thresholds.get(
+                "coverage_ratio",
+                cfg_thresholds.get("coverage_ratio", 0.95)
+            ),
+            "saturation_score": phase_thresholds.get(
+                "saturation_score",
+                cfg_thresholds.get("saturation_score", 0.90)
+            ),
+            "max_iterations": phase_thresholds.get(
+                "max_iterations",
+                cfg_thresholds.get("max_iterations", 1000)
+            ),
+        }
+        if thresholds:
+            self._thresholds.update(thresholds)
+
+        # State
+        self._covered_prompts: set = set()
+        self._recent_embeddings: List[np.ndarray] = []
+        self._past_embeddings: List[np.ndarray] = []
+        self._iteration: int = 0
+        self._metrics_log: List[Dict] = []
+
+        logger.info(
+            f"PhaseCompletionMonitor initialised: "
+            f"phase={phase_config.display_name}, "
+            f"total_prompts={self._total_prompts}, "
+            f"thresholds={self._thresholds}"
+        )
+
+    # ─── Public API ───────────────────────────────────────────────────────
+
+    def update(
+        self,
+        answer_text: str,
+        answer_embedding: np.ndarray,
+        prompt_id: Optional[str] = None,
+    ) -> Dict:
+        """
+        Process one student answer.
+
+        Call this after every student output during training.
+
+        Args:
+            answer_text:      Raw string output from student model.
+            answer_embedding: SPECTER2 embedding of answer_text,
+                              shape (768,).
+            prompt_id:        ID of the prompt this answer responds to.
+                              If None, coverage tracking is skipped for
+                              this answer (saturation still tracked).
+
+        Returns:
+            Dict with current coverage_ratio, saturation_score,
+            iteration, and is_complete flag.
+        """
+        self._iteration += 1
+
+        # Update prompt coverage
+        if prompt_id and validate_answer(answer_text):
+            self._covered_prompts.add(prompt_id)
+
+        # Update embedding history
+        self._recent_embeddings.append(answer_embedding)
+        self._past_embeddings.append(answer_embedding)
+
+        # Keep recent window bounded (last 50 for saturation check)
+        if len(self._recent_embeddings) > 50:
+            self._recent_embeddings.pop(0)
+
+        # Compute metrics
+        coverage = self._compute_coverage()
+        saturation = self._compute_saturation(answer_embedding)
+
+        metrics = {
+            "iteration": self._iteration,
+            "phase": self._phase_config.display_name,
+            "coverage_ratio": round(coverage, 4),
+            "saturation_score": round(saturation, 4),
+            "covered_prompts": len(self._covered_prompts),
+            "total_prompts": self._total_prompts,
+            "is_complete": self._check_complete(coverage, saturation),
+        }
+        self._metrics_log.append(metrics)
+
+        log_event(
+            "core.training",
+            f"[PhaseMonitor] phase={self._phase_config.display_name} | "
+            f"iter={self._iteration} | "
+            f"coverage={coverage:.3f} | "
+            f"saturation={saturation:.3f} | "
+            f"complete={metrics['is_complete']}",
+            level="debug"
+        )
+        return metrics
+
+    def is_complete(self) -> bool:
+        """
+        Returns True if both coverage and saturation thresholds
+        are met, or max_iterations is reached.
+        """
+        if self._iteration >= self._thresholds["max_iterations"]:
+            logger.warning(
+                f"Phase {self._phase_config.display_name} reached "
+                f"max_iterations={self._thresholds['max_iterations']} "
+                "without meeting thresholds. Forcing advancement."
+            )
+            return True
+        coverage = self._compute_coverage()
+        saturation = self._compute_saturation(
+            self._past_embeddings[-1]
+            if self._past_embeddings
+            else np.zeros(768)
+        )
+        return self._check_complete(coverage, saturation)
+
+    def get_metrics(self) -> Dict:
+        """
+        Return current phase completion metrics snapshot.
+        Safe to call at any time.
+        """
+        coverage = self._compute_coverage()
+        saturation = (
+            self._compute_saturation(self._past_embeddings[-1])
+            if self._past_embeddings
+            else 0.0
+        )
+        return {
+            "phase": self._phase_config.display_name,
+            "phase_id": self._phase_config.id,
+            "iteration": self._iteration,
+            "coverage_ratio": round(coverage, 4),
+            "coverage_target": self._thresholds["coverage_ratio"],
+            "saturation_score": round(saturation, 4),
+            "saturation_target": self._thresholds["saturation_score"],
+            "covered_prompts": len(self._covered_prompts),
+            "total_prompts": self._total_prompts,
+            "is_complete": self.is_complete(),
+            "thresholds": self._thresholds,
+        }
+
+    def get_metrics_log(self) -> List[Dict]:
+        """Return full per-iteration metrics history."""
+        return self._metrics_log
+
+    def reset(self, phase_config: PhaseConfig, phase_prompts: List[Dict]):
+        """
+        Reset monitor for a new phase.
+        Call immediately after phase advancement.
+        """
+        self._phase_config = phase_config
+        self._phase_prompts = phase_prompts
+        self._total_prompts = max(len(phase_prompts), 1)
+        self._covered_prompts = set()
+        self._recent_embeddings = []
+        self._past_embeddings = []
+        self._iteration = 0
+        self._metrics_log = []
+        logger.info(
+            f"PhaseCompletionMonitor reset for phase: "
+            f"{phase_config.display_name}"
+        )
+
+    # ─── Internal computation ─────────────────────────────────────────────
+
+    def _compute_coverage(self) -> float:
+        """Coverage ratio: fraction of prompts with valid answers."""
+        return len(self._covered_prompts) / self._total_prompts
+
+    def _compute_saturation(self, new_embedding: np.ndarray) -> float:
+        """
+        Semantic saturation: average similarity of new_embedding
+        to last top_k embeddings in history.
+        Delegates to canonical compute_saturation in utils/helpers.py.
+        """
+        if len(self._past_embeddings) < 2:
+            return 0.0
+        # Exclude the embedding just appended (itself)
+        history = self._past_embeddings[:-1]
+        return compute_saturation(new_embedding, history, top_k=5)
+
+    def _check_complete(self, coverage: float, saturation: float) -> bool:
+        """Returns True if both thresholds simultaneously met."""
+        return (
+            coverage >= self._thresholds["coverage_ratio"]
+            and saturation >= self._thresholds["saturation_score"]
+        )
+
+
+# ─── Training loop integration helper ────────────────────────────────────────
+
+def build_phase_monitor(
+    phase_id: int,
+    phase_prompts: Optional[List[Dict]] = None,
+    thresholds: Optional[Dict] = None,
+) -> PhaseCompletionMonitor:
+    """
+    Convenience factory: build a PhaseCompletionMonitor for a given
+    phase ID.
+
+    Args:
+        phase_id:      1-indexed phase ID (matches PHASES list).
+        phase_prompts: List of prompt dicts with 'id' field.
+                       Pass empty list if prompts not yet available —
+                       coverage tracking will be disabled but saturation
+                       still works.
+        thresholds:    Optional threshold overrides.
+
+    Returns:
+        PhaseCompletionMonitor ready for use in training loop.
+
+    Usage in training loop:
+        monitor = build_phase_monitor(7, phase_prompts)
+        for answer in student_outputs:
+            emb = embedder.embed_text(answer.text)
+            metrics = monitor.update(answer.text, emb, answer.prompt_id)
+            log_event("training", str(metrics))
+            if monitor.is_complete():
+                curriculum.advance_phase()
+                monitor.reset(
+                    get_phase(curriculum.current_phase + 1),
+                    next_phase_prompts
+                )
+    """
+    phase_config = get_phase(phase_id)
+    if phase_config is None:
+        raise ValueError(f"Unknown phase_id={phase_id}")
+    prompts = phase_prompts or []
+    return PhaseCompletionMonitor(phase_config, prompts, thresholds)
