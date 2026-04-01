@@ -1,44 +1,53 @@
-# Core ML
-torch>=2.0.0
-transformers>=4.30.0
-peft>=0.4.0
-accelerate>=0.20.0
+# ─── Logiik Requirements ────────────────────────────────────────────────────
+# Core ML / Training
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+transformers>=4.40.0
+peft>=0.10.0
+trl>=0.8.6
+sentence-transformers>=2.7.0
+accelerate>=0.29.0
+bitsandbytes>=0.43.0
 
-# Teacher APIs
-openai>=1.0.0
-anthropic>=0.3.0
+# Scientific Embeddings
+# allenai/specter2 is loaded via sentence-transformers — no extra install needed
 
-# Storage & Vector DB
-chromadb>=0.4.0
-faiss-cpu>=1.7.4
-numpy>=1.24.0
-sentence-transformers>=2.2.0
+# Image Understanding
+Pillow>=10.0.0
+pytesseract>=0.3.10
 
-# API & Dashboard
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-websockets>=11.0
-plotly>=5.15.0
-pandas>=2.0.0
+# PDF Processing
+PyMuPDF>=1.24.0
 
-# Firebase cloud memory
-firebase-admin>=6.0.0
+# Vector Database
+pinecone-client>=3.2.0
+
+# Firebase (REST only — no Admin SDK required)
+requests>=2.31.0
+
+# Redis (installed but disabled via config flag)
+redis>=5.0.0
+
+# AWS S3 (installed but disabled via config flag)
+boto3>=1.34.0
+
+# Scientific / Numerical
+numpy>=1.26.0
+scipy>=1.12.0
+scikit-learn>=1.4.0
+networkx>=3.3.0
+
+# Web Framework / API
+fastapi>=0.110.0
+uvicorn>=0.29.0
+websockets>=12.0
+pydantic>=2.6.0
+
+# Dashboard
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
 
 # Utilities
-pyyaml>=6.0
-pydantic>=2.0.0
-python-dotenv>=1.0.0
-tqdm>=4.65.0
-
-# Frontier orchestration + self-hosted inference
-langgraph>=0.2.0
-langgraph-checkpoint-sqlite>=1.0.0
-langchain>=0.3.0
-langchain-community>=0.3.0
-langchain-ollama>=0.2.0
-llama-index>=0.11.0
-llama-index-embeddings-huggingface>=0.3.0
-llama-index-vector-stores-chroma>=0.2.0
-vllm>=0.6.0
-biopython>=1.84
-rdkit>=2024.3.5
+tqdm>=4.66.0
+python-multipart>=0.0.9
