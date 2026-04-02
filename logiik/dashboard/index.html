@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Logiik Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e2e8f0;
+      --text-muted: #8892a4;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --blue: #3b82f6;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+    }
+    header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 20px; font-weight: 700; }
+    header span { color: var(--text-muted); font-size: 12px; }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .status-dot.green { background: var(--green); }
+    .status-dot.yellow { background: var(--yellow); }
+    .status-dot.red { background: var(--red); }
+    nav {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    nav button {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      padding: 12px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    nav button.active {
+      color: var(--text);
+      border-bottom-color: var(--blue);
+    }
+    nav button:hover { color: var(--text); }
+    .tab-content { display: none; padding: 24px; }
+    .tab-content.active { display: block; }
+    .grid { display: grid; gap: 16px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .metric {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .metric.green { color: var(--green); }
+    .metric.yellow { color: var(--yellow); }
+    .metric.red { color: var(--red); }
+    .metric.blue { color: var(--blue); }
+    .sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .progress-bar {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+    .chart-wrap { position: relative; height: 200px; }
+    .query-box {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--text);
+      font-size: 14px;
+      resize: vertical;
+      min-height: 80px;
+    }
+    .query-box:focus { outline: none; border-color: var(--blue); }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .result-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 8px;
+    }
+    .result-score {
+      font-size: 11px;
+      color: var(--text-muted);
+      float: right;
+    }
+    .result-source {
+      font-size: 11px;
+      color: var(--purple);
+      margin-top: 4px;
+    }
+    .result-text {
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+    .log-entry {
+      font-size: 12px;
+      font-family: monospace;
+      color: var(--text-muted);
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .log-entry .ts { color: var(--blue); }
+    .log-entry .level-info { color: var(--green); }
+    .log-entry .level-warn { color: var(--yellow); }
+    .log-entry .level-error { color: var(--red); }
+    #log-container {
+      max-height: 400px;
+      overflow-y: auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+    .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+    .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+    .badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+    @media (max-width: 768px) {
+      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="status-dot" id="api-dot"></div>
+  <h1>Logiik</h1>
+  <span id="api-status">Connecting...</span>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('phase', this)">Phase Monitor</button>
+  <button onclick="showTab('training', this)">Training</button>
+  <button onclick="showTab('knowledge', this)">Knowledge Base</button>
+  <button onclick="showTab('gpu', this)">GPU</button>
+  <button onclick="showTab('query', this)">Query</button>
+  <button onclick="showTab('logs', this)">Logs</button>
+</nav>
+
+<!-- TAB 1: Phase Monitor -->
+<div id="tab-phase" class="tab-content active">
+  <div class="grid grid-4" style="margin-bottom:16px">
+    <div class="card">
+      <h3>Current Phase</h3>
+      <div class="metric blue" id="phase-name">—</div>
+      <div class="sub" id="phase-id">Phase —</div>
+    </div>
+    <div class="card">
+      <h3>Coverage Ratio</h3>
+      <div class="metric" id="coverage-metric">—</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="coverage-bar"
+             style="width:0%;background:#3b82f6"></div>
+      </div>
+      <div class="sub">Target: 95%</div>
+    </div>
+    <div class="card">
+      <h3>Saturation Score</h3>
+      <div class="metric" id="saturation-metric">—</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="saturation-bar"
+             style="width:0%;background:#a855f7"></div>
+      </div>
+      <div class="sub">Target: 90%</div>
+    </div>
+    <div class="card">
+      <h3>Status</h3>
+      <div id="phase-status-badge">
+        <span class="badge badge-yellow">In Progress</span>
+      </div>
+      <div class="sub" id="phase-iter">Iteration: 0</div>
+    </div>
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Coverage Over Time</h3>
+      <div class="chart-wrap">
+        <canvas id="coverage-chart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Saturation Over Time</h3>
+      <div class="chart-wrap">
+        <canvas id="saturation-chart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 2: Training -->
+<div id="tab-training" class="tab-content">
+  <div class="grid grid-4" style="margin-bottom:16px">
+    <div class="card">
+      <h3>Training Loss</h3>
+      <div class="metric" id="loss-metric">—</div>
+      <div class="sub" id="val-loss-sub">Val loss: —</div>
+    </div>
+    <div class="card">
+      <h3>Step</h3>
+      <div class="metric blue" id="step-metric">0</div>
+      <div class="sub" id="phase-train-name">Phase: —</div>
+    </div>
+    <div class="card">
+      <h3>Questions Banked</h3>
+      <div class="metric green" id="bank-count">0</div>
+      <div class="sub" id="toss-count">Tossed: 0</div>
+    </div>
+    <div class="card">
+      <h3>Training State</h3>
+      <div id="training-state-badge">
+        <span class="badge badge-yellow">Idle</span>
+      </div>
+      <div class="sub" id="examples-processed">Examples: 0</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Loss Over Time</h3>
+    <div class="chart-wrap" style="height:240px">
+      <canvas id="loss-chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 3: Knowledge Base -->
+<div id="tab-knowledge" class="tab-content">
+  <div class="grid grid-4" style="margin-bottom:16px">
+    <div class="card">
+      <h3>Total Vectors</h3>
+      <div class="metric blue" id="vector-count">—</div>
+      <div class="sub" id="vector-backend">Backend: —</div>
+    </div>
+    <div class="card">
+      <h3>Chunks Ingested</h3>
+      <div class="metric green" id="chunks-new">—</div>
+      <div class="sub" id="chunks-dup">Duplicates: —</div>
+    </div>
+    <div class="card">
+      <h3>Images Ingested</h3>
+      <div class="metric" id="images-new"
+           style="color:var(--purple)">—</div>
+      <div class="sub" id="images-dup">Duplicates: —</div>
+    </div>
+    <div class="card">
+      <h3>Firebase Docs</h3>
+      <div class="metric" id="firebase-docs">—</div>
+      <div class="sub" id="firebase-checkpoints">Checkpoints: —</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Ingestion Mode</h3>
+    <div id="ingestion-mode-badge" style="margin-bottom:8px">
+      <span class="badge badge-blue">lite_mode</span>
+    </div>
+    <div class="sub">
+      Lite Mode: 1–500 PDFs &nbsp;|&nbsp;
+      Full Mode: 500–50,000 PDFs
+    </div>
+  </div>
+</div>
+
+<!-- TAB 4: GPU -->
+<div id="tab-gpu" class="tab-content">
+  <div class="grid grid-4" style="margin-bottom:16px">
+    <div class="card">
+      <h3>Device</h3>
+      <div class="metric blue" id="gpu-name"
+           style="font-size:16px">CPU</div>
+      <div class="sub" id="gpu-available">No GPU detected</div>
+    </div>
+    <div class="card">
+      <h3>VRAM Used</h3>
+      <div class="metric" id="vram-used">—</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="vram-bar"
+             style="width:0%;background:#ef4444"></div>
+      </div>
+      <div class="sub" id="vram-total">Total: — GB</div>
+    </div>
+    <div class="card">
+      <h3>GPU Utilisation</h3>
+      <div class="metric" id="gpu-util">—</div>
+      <div class="sub">%</div>
+    </div>
+    <div class="card">
+      <h3>Temperature</h3>
+      <div class="metric" id="gpu-temp">—</div>
+      <div class="sub">°C</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>VRAM Usage Over Time</h3>
+    <div class="chart-wrap" style="height:240px">
+      <canvas id="vram-chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 5: Query -->
+<div id="tab-query" class="tab-content">
+  <div class="card" style="margin-bottom:16px">
+    <h3>Query Knowledge Base</h3>
+    <textarea class="query-box" id="query-input"
+      placeholder="Enter a scientific question..."></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <button class="btn btn-primary" onclick="runQuery()">
+        Search
+      </button>
+      <label style="color:var(--text-muted);font-size:12px">
+        Top-K:
+        <input type="number" id="top-k" value="5" min="1" max="20"
+          style="width:48px;background:var(--bg);border:1px solid
+          var(--border);color:var(--text);border-radius:4px;
+          padding:2px 4px;margin-left:4px"/>
+      </label>
+      <label style="color:var(--text-muted);font-size:12px">
+        Phase filter:
+        <select id="phase-filter"
+          style="background:var(--bg);border:1px solid var(--border);
+          color:var(--text);border-radius:4px;padding:2px 4px;
+          margin-left:4px">
+          <option value="">All</option>
+          <option value="phase7">Phase 7</option>
+          <option value="phase8">Phase 8</option>
+          <option value="phase9">Phase 9</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div id="query-results"></div>
+  <div id="query-context-card" style="display:none;margin-top:16px"
+       class="card">
+    <h3>Assembled Context</h3>
+    <pre id="query-context"
+         style="white-space:pre-wrap;font-size:12px;
+         color:var(--text-muted);margin-top:8px"></pre>
+  </div>
+</div>
+
+<!-- TAB 6: Logs -->
+<div id="tab-logs" class="tab-content">
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <button class="btn btn-primary" onclick="refreshLogs()">
+      Refresh
+    </button>
+    <button class="btn" style="background:var(--surface)"
+            onclick="clearLogs()">
+      Clear
+    </button>
+  </div>
+  <div id="log-container">
+    <div class="log-entry">
+      <span class="ts">[--:--:--]</span>
+      <span class="level-info"> INFO </span>
+      Logiik dashboard initialised.
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8001';
+const REFRESH_MS = 2000;
+
+// ── Tab navigation ──────────────────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(t =>
+    t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b =>
+    b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ── Chart helpers ────────────────────────────────────────────────────────────
+function makeLineChart(id, label, color) {
+  const ctx = document.getElementById(id).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label,
+        data: [],
+        borderColor: color,
+        backgroundColor: color + '22',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          min: 0, max: 1,
+          grid: { color: '#2a2d3a' },
+          ticks: { color: '#8892a4' }
+        }
+      }
+    }
+  });
+}
+
+function makeValueChart(id, label, color, yMin, yMax) {
+  const ctx = document.getElementById(id).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label,
+        data: [],
+        borderColor: color,
+        backgroundColor: color + '22',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          min: yMin,
+          max: yMax,
+          grid: { color: '#2a2d3a' },
+          ticks: { color: '#8892a4' }
+        }
+      }
+    }
+  });
+}
+
+function pushData(chart, value, maxPoints = 60) {
+  const ts = new Date().toLocaleTimeString();
+  chart.data.labels.push(ts);
+  chart.data.datasets[0].data.push(value);
+  if (chart.data.labels.length > maxPoints) {
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  chart.update('none');
+}
+
+// ── Initialise charts ────────────────────────────────────────────────────────
+const coverageChart = makeLineChart(
+  'coverage-chart', 'Coverage', '#3b82f6');
+const saturationChart = makeLineChart(
+  'saturation-chart', 'Saturation', '#a855f7');
+const lossChart = makeValueChart(
+  'loss-chart', 'Loss', '#ef4444', 0, null);
+const vramChart = makeValueChart(
+  'vram-chart', 'VRAM GB', '#eab308', 0, null);
+
+// ── Colour helpers ───────────────────────────────────────────────────────────
+function ratioColor(v) {
+  if (v >= 0.90) return 'green';
+  if (v >= 0.70) return 'yellow';
+  return 'red';
+}
+
+function pct(v) { return (v * 100).toFixed(1) + '%'; }
+
+// ── API fetch helpers ────────────────────────────────────────────────────────
+async function fetchJSON(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+// ── Health check ─────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    await fetchJSON('/logiik/health');
+    document.getElementById('api-dot').className = 'status-dot green';
+    document.getElementById('api-status').textContent = 'Connected';
+  } catch {
+    document.getElementById('api-dot').className = 'status-dot red';
+    document.getElementById('api-status').textContent = 'API offline';
+  }
+}
+
+// ── Phase metrics ────────────────────────────────────────────────────────────
+async function refreshPhase() {
+  try {
+    const d = await fetchJSON('/logiik/phase_metrics');
+    document.getElementById('phase-name').textContent =
+      d.phase || '—';
+    document.getElementById('phase-id').textContent =
+      'Phase ' + (d.phase_id || '—');
+    document.getElementById('phase-iter').textContent =
+      'Iteration: ' + (d.iteration || 0);
+
+    const cov = d.coverage_ratio || 0;
+    const sat = d.saturation_score || 0;
+
+    document.getElementById('coverage-metric').textContent = pct(cov);
+    document.getElementById('coverage-metric').className =
+      'metric ' + ratioColor(cov);
+    document.getElementById('coverage-bar').style.width =
+      (cov * 100) + '%';
+
+    document.getElementById('saturation-metric').textContent = pct(sat);
+    document.getElementById('saturation-metric').className =
+      'metric ' + ratioColor(sat);
+    document.getElementById('saturation-bar').style.width =
+      (sat * 100) + '%';
+
+    const badge = document.getElementById('phase-status-badge');
+    if (d.is_complete) {
+      badge.innerHTML =
+        '<span class="badge badge-green">Complete</span>';
+    } else if (cov > 0) {
+      badge.innerHTML =
+        '<span class="badge badge-yellow">In Progress</span>';
+    } else {
+      badge.innerHTML =
+        '<span class="badge badge-red">Not Started</span>';
+    }
+
+    pushData(coverageChart, cov);
+    pushData(saturationChart, sat);
+  } catch(e) { /* API not yet ready */ }
+}
+
+// ── Training metrics ─────────────────────────────────────────────────────────
+async function refreshTraining() {
+  try {
+    const d = await fetchJSON('/logiik/training_metrics');
+    const loss = d.loss;
+    document.getElementById('loss-metric').textContent =
+      loss != null ? loss.toFixed(4) : '—';
+    document.getElementById('loss-metric').className =
+      'metric ' + (loss != null ?
+        (loss < 1 ? 'green' : loss < 3 ? 'yellow' : 'red') : '');
+    document.getElementById('val-loss-sub').textContent =
+      'Val loss: ' + (d.val_loss != null ?
+        d.val_loss.toFixed(4) : '—');
+    document.getElementById('step-metric').textContent =
+      d.step || 0;
+    document.getElementById('phase-train-name').textContent =
+      'Phase: ' + (d.current_phase || '—');
+    document.getElementById('bank-count').textContent =
+      d.bank_count || 0;
+    document.getElementById('toss-count').textContent =
+      'Tossed: ' + (d.toss_count || 0);
+    document.getElementById('examples-processed').textContent =
+      'Examples: ' + (d.examples_processed || 0);
+
+    const sb = document.getElementById('training-state-badge');
+    if (d.training_complete) {
+      sb.innerHTML =
+        '<span class="badge badge-green">Complete</span>';
+    } else if (d.training_active) {
+      sb.innerHTML =
+        '<span class="badge badge-blue">Training</span>';
+    } else {
+      sb.innerHTML =
+        '<span class="badge badge-yellow">Idle</span>';
+    }
+
+    if (loss != null) pushData(lossChart, loss);
+  } catch(e) {}
+}
+
+// ── Knowledge base ───────────────────────────────────────────────────────────
+async function refreshKnowledge() {
+  try {
+    const d = await fetchJSON('/logiik/knowledge_stats');
+    const vdb = d.vector_db || {};
+    const fb = d.firebase || {};
+    const ing = d.ingestion || {};
+
+    document.getElementById('vector-count').textContent =
+      vdb.total_vector_count ?? '—';
+    document.getElementById('vector-backend').textContent =
+      'Backend: ' + (vdb.backend || 'pinecone');
+    document.getElementById('chunks-new').textContent =
+      ing.chunks_new ?? '—';
+    document.getElementById('chunks-dup').textContent =
+      'Duplicates: ' + (ing.chunks_duplicate ?? '—');
+    document.getElementById('images-new').textContent =
+      ing.images_new ?? '—';
+    document.getElementById('images-dup').textContent =
+      'Duplicates: ' + (ing.images_duplicate ?? '—');
+    document.getElementById('firebase-docs').textContent =
+      (fb.checkpoints_count ?? 0) +
+      (fb.sessions_count ?? 0) +
+      (fb.embeddings_count ?? 0);
+    document.getElementById('firebase-checkpoints').textContent =
+      'Checkpoints: ' + (fb.checkpoints_count ?? 0);
+
+    const mode = ing.mode || 'lite_mode';
+    document.getElementById('ingestion-mode-badge').innerHTML =
+      '<span class="badge badge-blue">' + mode + '</span>';
+  } catch(e) {}
+}
+
+// ── GPU ──────────────────────────────────────────────────────────────────────
+async function refreshGPU() {
+  try {
+    const d = await fetchJSON('/logiik/gpu_status');
+    document.getElementById('gpu-name').textContent =
+      d.device_name || 'CPU';
+    document.getElementById('gpu-available').textContent =
+      d.gpu_available ? 'GPU Active' : 'CPU Mode';
+
+    const used = d.vram_used_gb || 0;
+    const total = d.vram_total_gb || 0;
+    document.getElementById('vram-used').textContent =
+      used.toFixed(1) + ' GB';
+    document.getElementById('vram-total').textContent =
+      'Total: ' + total.toFixed(1) + ' GB';
+
+    const usedPct = total > 0 ? (used / total) * 100 : 0;
+    document.getElementById('vram-bar').style.width = usedPct + '%';
+    document.getElementById('vram-bar').style.background =
+      usedPct > 85 ? '#ef4444' :
+      usedPct > 60 ? '#eab308' : '#22c55e';
+
+    document.getElementById('gpu-util').textContent =
+      d.utilisation_pct != null ?
+        d.utilisation_pct.toFixed(0) + '%' : '—';
+    document.getElementById('gpu-util').className =
+      'metric ' + (d.utilisation_pct > 90 ? 'red' :
+                   d.utilisation_pct > 60 ? 'yellow' : 'green');
+
+    document.getElementById('gpu-temp').textContent =
+      d.temperature_c != null ? d.temperature_c + '°C' : '—';
+    document.getElementById('gpu-temp').className =
+      'metric ' + (d.temperature_c > 85 ? 'red' :
+                   d.temperature_c > 70 ? 'yellow' : 'green');
+
+    if (total > 0) pushData(vramChart, used);
+  } catch(e) {}
+}
+
+// ── Query ────────────────────────────────────────────────────────────────────
+async function runQuery() {
+  const query = document.getElementById('query-input').value.trim();
+  if (!query) return;
+  const topK = parseInt(document.getElementById('top-k').value) || 5;
+  const phaseFilter =
+    document.getElementById('phase-filter').value || null;
+
+  const container = document.getElementById('query-results');
+  container.innerHTML =
+    '<div style="color:var(--text-muted)">Searching...</div>';
+
+  try {
+    const r = await fetch(API + '/logiik/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query, top_k: topK,
+        phase_filter: phaseFilter,
+        min_score: 0.0
+      })
+    });
+    const d = await r.json();
+
+    if (!d.results || d.results.length === 0) {
+      container.innerHTML =
+        '<div style="color:var(--text-muted)">No results found.</div>';
+      return;
+    }
+
+    container.innerHTML = d.results.map(res => `
+      <div class="result-card">
+        <span class="result-score">
+          Score: ${res.score.toFixed(4)}
+          ${res.cache_hit ?
+            '<span class="badge badge-green" ' +
+            'style="margin-left:4px">cache</span>' : ''}
+        </span>
+        <div class="result-source">${res.source || 'Unknown source'}</div>
+        <div class="result-text">${res.text}</div>
+      </div>
+    `).join('');
+
+    if (d.context) {
+      document.getElementById('query-context-card')
+              .style.display = 'block';
+      document.getElementById('query-context').textContent =
+        d.context;
+    }
+
+    addLog('info',
+      `Query: "${query.substring(0,40)}..." → ` +
+      `${d.results.length} results in ${d.latency_ms}ms`);
+  } catch(e) {
+    container.innerHTML =
+      '<div style="color:var(--red)">Query failed: ' +
+      e.message + '</div>';
+  }
+}
+
+// Allow Enter to submit query (Shift+Enter for newline)
+document.getElementById('query-input')
+  .addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      runQuery();
+    }
+  });
+
+// ── Logs ─────────────────────────────────────────────────────────────────────
+const _logs = [];
+
+function addLog(level, message) {
+  const ts = new Date().toLocaleTimeString();
+  _logs.unshift({ ts, level, message });
+  if (_logs.length > 200) _logs.pop();
+  renderLogs();
+}
+
+function renderLogs() {
+  const container = document.getElementById('log-container');
+  container.innerHTML = _logs.map(l => `
+    <div class="log-entry">
+      <span class="ts">[${l.ts}]</span>
+      <span class="level-${l.level}"> ${l.level.toUpperCase()} </span>
+      ${l.message}
+    </div>
+  `).join('');
+}
+
+function refreshLogs() {
+  addLog('info', 'Log refresh requested.');
+}
+
+function clearLogs() {
+  _logs.length = 0;
+  renderLogs();
+}
+
+// ── Main polling loop ─────────────────────────────────────────────────────────
+async function refresh() {
+  await checkHealth();
+  await Promise.allSettled([
+    refreshPhase(),
+    refreshTraining(),
+    refreshKnowledge(),
+    refreshGPU(),
+  ]);
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
