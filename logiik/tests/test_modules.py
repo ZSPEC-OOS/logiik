@@ -37,15 +37,15 @@ class TestConfig:
     def test_phases_in_config(self):
         from logiik.config import CONFIG
         phases = CONFIG["curriculum"]["phases"]
-        assert len(phases) == 10
+        assert len(phases) == 12
 
-    def test_phase7_config(self):
+    def test_phase6_config(self):
         from logiik.config import CONFIG
         phases = CONFIG["curriculum"]["phases"]
-        p7 = next(p for p in phases if p["id"] == 7)
-        assert p7["name"] == "niche_scientific_reasoning"
-        assert p7["teacher_student"] == True
-        assert p7["correctness_threshold"] == 0.90
+        p6 = next(p for p in phases if p["id"] == 6)
+        assert p6["name"] == "niche_scientific_reasoning"
+        assert p6["teacher_student"] == True
+        assert p6["correctness_threshold"] == 0.90
 
     def test_cache_disabled_by_default(self):
         from logiik.config import CONFIG
@@ -261,16 +261,16 @@ class TestRetrieval:
 class TestCurriculum:
     def test_all_phases_loaded(self):
         from logiik.curriculum.phases import PHASES
-        assert len(PHASES) == 10
+        assert len(PHASES) == 12
 
     def test_phase_ids_sequential(self):
         from logiik.curriculum.phases import PHASES
         ids = [p.id for p in PHASES]
-        assert ids == list(range(1, 11))
+        assert ids == list(range(1, 13))
 
     def test_get_phase(self):
         from logiik.curriculum.phases import get_phase
-        for i in range(1, 11):
+        for i in range(1, 13):
             p = get_phase(i)
             assert p is not None
             assert p.id == i
@@ -278,38 +278,42 @@ class TestCurriculum:
     def test_get_phase_invalid(self):
         from logiik.curriculum.phases import get_phase
         assert get_phase(0) is None
-        assert get_phase(11) is None
+        assert get_phase(13) is None
 
-    def test_phase7_spec(self):
+    def test_phase6_spec(self):
         from logiik.curriculum.phases import get_phase
-        p7 = get_phase(7)
-        assert p7.name == "niche_scientific_reasoning"
-        assert p7.teacher_student == True
-        assert p7.correctness_threshold == 0.90
-        assert p7.generative_ratio == 0.94
-        assert "drosophila" not in p7.name.lower()
-        assert p7.metadata["legacy_phase"] == "drosophila_ai_framework"
+        p6 = get_phase(6)
+        assert p6.name == "niche_scientific_reasoning"
+        assert p6.teacher_student == True
+        assert p6.correctness_threshold == 0.90
+        assert p6.generative_ratio == 0.93
+        assert "drosophila" not in p6.name.lower()
+        assert p6.metadata["legacy_phase"] == "drosophila_ai_framework"
 
-    def test_phase10_stages_in_metadata(self):
+    def test_phase12_stages_in_metadata(self):
         from logiik.curriculum.phases import get_phase
-        p10 = get_phase(10)
-        stages = p10.metadata["stages"]
+        p12 = get_phase(12)
+        stages = p12.metadata["stages"]
         assert len(stages) == 6
         names = [s["name"] for s in stages]
-        assert all(n.startswith("phase10_stage_") for n in names)
+        assert all(n.startswith("phase12_stage_") for n in names)
 
     def test_teacher_student_phases(self):
         from logiik.curriculum.phases import get_teacher_student_phases
         ts = get_teacher_student_phases()
-        assert len(ts) == 1
-        assert ts[0].id == 7
+        ts_ids = [p.id for p in ts]
+        assert ts_ids == [6, 11], f"Expected [6, 11], got {ts_ids}"
 
     def test_get_all_phase_names(self):
         from logiik.curriculum.phases import get_all_phase_names
         names = get_all_phase_names()
-        assert len(names) == 10
-        assert "Niche Scientific Reasoning" in names
+        assert len(names) == 12
+        assert "Niche & Interdisciplinary Scientific Reasoning" in names
         assert "Synthetic Judgment" in names
+        assert "Scientific Language & Literature" in names
+        assert "Mathematical & Statistical Reasoning" in names
+        assert "Adversarial Robustness & Epistemic Integrity" in names
+        assert "Research Computing & Scientific Coding" in names
 
 
 # ─── TRAINING (Phase 7) ───────────────────────────────────────────────────────
@@ -396,17 +400,17 @@ class TestPhase7Training:
     def test_phase_completion_monitor(self):
         from logiik.core.training import build_phase_monitor
         prompts = [{"id": f"p{i}"} for i in range(10)]
-        monitor = build_phase_monitor(7, prompts)
+        monitor = build_phase_monitor(6, prompts)
         assert monitor is not None
         metrics = monitor.get_metrics()
-        assert metrics["phase"] == "Niche Scientific Reasoning"
+        assert metrics["phase"] == "Niche & Interdisciplinary Scientific Reasoning"
         assert metrics["total_prompts"] == 10
         assert metrics["coverage_ratio"] == 0.0
 
     def test_monitor_update_and_coverage(self):
         from logiik.core.training import build_phase_monitor
         prompts = [{"id": f"p{i}"} for i in range(5)]
-        monitor = build_phase_monitor(7, prompts)
+        monitor = build_phase_monitor(6, prompts)
         for i in range(5):
             emb = np.random.randn(768).astype(np.float32)
             emb /= np.linalg.norm(emb)
@@ -568,6 +572,14 @@ class TestPhase10:
         assert output.decision in ("answer", "abstain")
         assert len(output.reasoning_chain) > 0
         assert 0.0 <= output.confidence <= 1.0
+
+    def test_phase12_stages_in_metadata(self):
+        from logiik.core.phase10_training import PHASE10_STAGES
+        assert len(PHASE10_STAGES) == 6
+        assert all(
+            s.startswith("phase10_stage_")
+            for s in PHASE10_STAGES
+        )
 
 
 # ─── API ──────────────────────────────────────────────────────────────────────
