@@ -524,7 +524,9 @@ class GenerativeCurriculum:
         tokenizer,
         topics_description: str = "",
         phase_ratios: Tuple[float, ...] = (
-            0.20, 0.20, 0.15, 0.15, 0.12, 0.10, 0.08
+            0.10, 0.50, 0.65, 0.70, 0.88,
+            0.93, 0.93, 0.92, 0.90, 0.94,
+            0.95, 0.95
         ),
         phase_topics: Optional[Dict[str, List[str]]] = None,
         topics_per_session: int = 5,
@@ -545,8 +547,11 @@ class GenerativeCurriculum:
             name.lower(): 0 for name in self.phase_names
         }
 
-        # Phase 7 teacher-student loop instance
-        self._phase7_loop = Phase7TeacherStudentLoop()
+        # Phase 6 teacher-student loop instance
+        # (Niche Scientific Reasoning — was Phase 7)
+        self._phase6_loop = Phase7TeacherStudentLoop()
+        # Phase 11 uses same loop mechanism
+        self._phase11_loop = Phase7TeacherStudentLoop()
 
         logger.info(
             f"GenerativeCurriculum initialised: "
@@ -600,20 +605,41 @@ class GenerativeCurriculum:
 
         # Route to phase-specific generator
         if self.current_phase == 0:
+            # Phase 1 — Memorization
             examples = self._gen_memorization(batch_size)
         elif self.current_phase == 1:
+            # Phase 2 — Generation
             examples = self._gen_generation(batch_size)
         elif self.current_phase == 2:
-            examples = self._gen_abstraction(batch_size)
+            # Phase 3 — Scientific Language & Literature
+            examples = self._gen_scientific_language(batch_size)
         elif self.current_phase == 3:
-            examples = self._gen_engineering(batch_size)
+            # Phase 4 — Mathematical & Statistical Reasoning
+            examples = self._gen_mathematical_statistical(batch_size)
         elif self.current_phase == 4:
-            examples = self._gen_coding(batch_size)
-        elif self.current_phase == 5:
+            # Phase 5 — Scientific Reasoning & Experimental Design
             examples = self._gen_scientific_reasoning(batch_size)
-        elif self.current_phase == 6:
-            # Phase 7 (0-indexed: 6) — Niche Scientific Reasoning
+        elif self.current_phase == 5:
+            # Phase 6 — Niche & Interdisciplinary Scientific Reasoning
             examples = self._gen_niche_scientific(batch_size)
+        elif self.current_phase == 6:
+            # Phase 7 — Scientific Image & Data Analysis
+            examples = self._gen_image_data_analysis(batch_size)
+        elif self.current_phase == 7:
+            # Phase 8 — Research Computing & Scientific Coding
+            examples = self._gen_research_computing(batch_size)
+        elif self.current_phase == 8:
+            # Phase 9 — Engineering Execution & Reliability
+            examples = self._gen_engineering(batch_size)
+        elif self.current_phase == 9:
+            # Phase 10 — Abstraction & Cross-Domain Synthesis
+            examples = self._gen_abstraction(batch_size)
+        elif self.current_phase == 10:
+            # Phase 11 — Adversarial Robustness & Epistemic Integrity
+            examples = self._gen_adversarial_robustness(batch_size)
+        elif self.current_phase == 11:
+            # Phase 12 — Synthetic Judgment
+            examples = self._gen_synthetic_judgment(batch_size)
         else:
             examples = self._gen_memorization(batch_size)
 
@@ -805,10 +831,405 @@ class GenerativeCurriculum:
             ))
         return examples
 
+    def _gen_scientific_language(
+        self, count: int
+    ) -> List[TrainingExample]:
+        """
+        Phase 3: Scientific Language & Literature.
+        Generates prompts requiring parsing, classification,
+        and production of scientific writing conventions.
+        """
+        topics = self._get_topics()
+        question_type_suffixes = [
+            (
+                "Classify each sentence in the following passage "
+                "as one of: [established_fact | experimental_result "
+                "| hypothesis | speculation | methodological_claim]. "
+                "Justify each classification."
+            ),
+            (
+                "Identify all hedging language in the following "
+                "abstract excerpt. For each hedge, explain what "
+                "claim is being softened and why."
+            ),
+            (
+                "Restate the following methods section in plain "
+                "language without losing scientific precision. "
+                "Identify any ambiguities present in the original."
+            ),
+            (
+                "Distinguish which statements in the following "
+                "results section are direct observations vs. "
+                "inferences. Identify any unsupported leaps."
+            ),
+            (
+                "Rewrite the following sentence at publication "
+                "register: precise, hedged where appropriate, "
+                "and without overclaiming."
+            ),
+        ]
+        examples = []
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            suffix = question_type_suffixes[i % len(question_type_suffixes)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.80, num_answers=5
+            )
+            examples.append(TrainingExample(
+                question=(
+                    f"[Scientific Language Task]\n"
+                    f"Topic: {topic}\n"
+                    f"Context: {base.question}\n\n"
+                    f"{suffix}"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.80,
+                domain=f"scientific_language_{base.domain}",
+                explanation=(
+                    f"Scientific language and literature task: "
+                    f"{base.explanation}"
+                ),
+            ))
+        return examples
+
+    def _gen_mathematical_statistical(
+        self, count: int
+    ) -> List[TrainingExample]:
+        """
+        Phase 4: Mathematical & Statistical Reasoning.
+        Generates prompts requiring quantitative evaluation
+        of scientific evidence and statistical outputs.
+        """
+        topics = self._get_topics()
+        question_type_suffixes = [
+            (
+                "Interpret the following statistical output. "
+                "State what can and cannot be concluded. "
+                "Identify any errors in the authors' interpretation."
+            ),
+            (
+                "Evaluate this experimental design for statistical "
+                "validity. Identify: sample size adequacy, "
+                "multiple comparisons issues, confounders, "
+                "and appropriate statistical test selection."
+            ),
+            (
+                "The following data visualisation is described. "
+                "State what it shows, what it does not show, "
+                "and what single change would most improve it."
+            ),
+            (
+                "Apply Bayesian reasoning to update the following "
+                "prior belief given the new evidence. Show your "
+                "reasoning explicitly."
+            ),
+            (
+                "Propagate uncertainty through the following "
+                "multi-step calculation. State the dominant "
+                "source of error and whether the final precision "
+                "is justified."
+            ),
+            (
+                "Evaluate whether the reported effect size is "
+                "scientifically meaningful given the domain context, "
+                "independent of statistical significance."
+            ),
+        ]
+        examples = []
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            suffix = question_type_suffixes[i % len(question_type_suffixes)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.85, num_answers=5
+            )
+            examples.append(TrainingExample(
+                question=(
+                    f"[Mathematical & Statistical Reasoning Task]\n"
+                    f"Topic: {topic}\n"
+                    f"Context: {base.question}\n\n"
+                    f"{suffix}"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.85,
+                domain=f"mathematical_statistical_{base.domain}",
+                explanation=(
+                    f"Mathematical and statistical reasoning: "
+                    f"{base.explanation}"
+                ),
+            ))
+        return examples
+
+    def _gen_image_data_analysis(
+        self, count: int
+    ) -> List[TrainingExample]:
+        """
+        Phase 7: Scientific Image & Data Analysis.
+        Generates prompts requiring figure interpretation,
+        limitation analysis, and follow-up experiment design.
+        """
+        topics = self._get_topics()
+        question_type_suffixes = [
+            (
+                "A scientific figure is described below. "
+                "State: (1) what the figure shows, "
+                "(2) what it does NOT show, "
+                "(3) what single follow-up experiment it suggests."
+            ),
+            (
+                "Interpret the following experimental data table. "
+                "Identify the key result, any anomalous entries, "
+                "and what statistical test should be applied."
+            ),
+            (
+                "The following microscopy image description is given. "
+                "Classify what is visible, assess image quality "
+                "indicators, and state what controls would be needed "
+                "to support the authors' interpretation."
+            ),
+            (
+                "Critically analyse this plot. State what the axes "
+                "represent, whether the scale is appropriate, "
+                "whether error bars are present and correct, "
+                "and what the data actually supports."
+            ),
+        ]
+        examples = []
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            suffix = question_type_suffixes[i % len(question_type_suffixes)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.88, num_answers=5
+            )
+            examples.append(TrainingExample(
+                question=(
+                    f"[Scientific Image & Data Analysis Task]\n"
+                    f"Topic: {topic}\n"
+                    f"Context: {base.question}\n\n"
+                    f"{suffix}"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.88,
+                domain=f"image_data_analysis_{base.domain}",
+                explanation=(
+                    f"Scientific image and data analysis: "
+                    f"{base.explanation}"
+                ),
+            ))
+        return examples
+
+    def _gen_research_computing(
+        self, count: int
+    ) -> List[TrainingExample]:
+        """
+        Phase 8: Research Computing & Scientific Coding.
+        Generates prompts requiring domain-grounded scientific
+        programming tasks. NOT generic coding — every task
+        is in a research context.
+        """
+        topics = self._get_topics()
+        question_type_suffixes = [
+            (
+                "Write Python code to process the following "
+                "experimental dataset. Include: artifact detection, "
+                "per-group statistics, an appropriate statistical "
+                "test, and a publication-ready results summary "
+                "with effect size and confidence interval."
+            ),
+            (
+                "Implement the following numerical method in Python. "
+                "Address: numerical stability, convergence criteria, "
+                "and include a validation test against a known "
+                "analytical solution."
+            ),
+            (
+                "The following scientific analysis pipeline has a bug "
+                "that produces a plausible but incorrect result. "
+                "Identify the bug. Note: the error is scientific, "
+                "not syntactic."
+            ),
+            (
+                "Write a reproducible analysis script for the "
+                "following experiment. Include: random seed setting, "
+                "parameter logging, intermediate result checkpointing, "
+                "and a README describing how to reproduce the output."
+            ),
+            (
+                "Write unit tests for the following scientific "
+                "function where the ground truth is known analytically. "
+                "Include edge cases specific to the scientific domain."
+            ),
+        ]
+        examples = []
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            suffix = question_type_suffixes[i % len(question_type_suffixes)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.90, num_answers=5
+            )
+            examples.append(TrainingExample(
+                question=(
+                    f"[Research Computing Task]\n"
+                    f"Scientific context: {topic}\n"
+                    f"Problem: {base.question}\n\n"
+                    f"{suffix}"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.90,
+                domain=f"research_computing_{base.domain}",
+                explanation=(
+                    f"Research computing and scientific coding: "
+                    f"{base.explanation}"
+                ),
+            ))
+        return examples
+
+    def _gen_adversarial_robustness(
+        self, count: int
+    ) -> List[TrainingExample]:
+        """
+        Phase 11: Adversarial Robustness & Epistemic Integrity.
+        Generates prompts with plausible but flawed scientific
+        content. Model must detect flaws, resist confident
+        misinformation, and maintain appropriate uncertainty.
+        Teacher-student loop enforces correctness >= 0.91.
+        """
+        topics = self._get_topics()
+        question_type_suffixes = [
+            (
+                "The following abstract is presented with high "
+                "confidence. Identify all methodological flaws. "
+                "State what the data actually supports vs. what "
+                "the authors claim. Do not assume the finding is "
+                "correct before evaluating it."
+            ),
+            (
+                "Examine the following reported results for "
+                "data fabrication indicators: too-clean results, "
+                "impossible standard deviations, suspicious digit "
+                "patterns, or implausible effect sizes. "
+                "Justify each flag."
+            ),
+            (
+                "The following paper structure is described. "
+                "Determine whether the authors are HARKing "
+                "(Hypothesising After Results are Known). "
+                "Identify the specific indicators."
+            ),
+            (
+                "A researcher asks you to accept the following "
+                "premise as established and build on it. "
+                "Evaluate the premise first. If it is not "
+                "sufficiently supported, state what would be "
+                "needed before it could be accepted."
+            ),
+            (
+                "The following argument uses rhetorical rather than "
+                "evidential reasoning to support a scientific claim. "
+                "Identify each rhetorical move and explain why it "
+                "does not constitute scientific evidence."
+            ),
+            (
+                "You are presented with a confident claim and asked "
+                "to agree. The claim has a plausible mechanism but "
+                "insufficient evidence. Maintain appropriate "
+                "uncertainty and explain exactly what evidence "
+                "threshold would warrant confidence."
+            ),
+        ]
+        examples = []
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            suffix = question_type_suffixes[i % len(question_type_suffixes)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.95, num_answers=5
+            )
+            examples.append(TrainingExample(
+                question=(
+                    f"[Adversarial Robustness Task]\n"
+                    f"Domain: {topic}\n"
+                    f"Content to evaluate: {base.question}\n\n"
+                    f"{suffix}"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.97,
+                domain=f"adversarial_robustness_{base.domain}",
+                explanation=(
+                    f"Adversarial robustness and epistemic integrity: "
+                    f"{base.explanation}"
+                ),
+            ))
+        return examples
+
+    def _gen_synthetic_judgment(
+        self, count: int
+    ) -> List[TrainingExample]:
+        """
+        Phase 12: Synthetic Judgment.
+        Generates integrated decision-under-uncertainty prompts
+        drawing on all prior phases. Feeds Phase12Trainer PPO loop.
+        """
+        topics = self._get_topics()
+        question_type_suffixes = [
+            (
+                "Make a decision on the following scientific question "
+                "under uncertainty. Show stepwise causal reasoning, "
+                "state your confidence explicitly, identify what "
+                "information would change your decision, and abstain "
+                "if the evidence is insufficient to decide."
+            ),
+            (
+                "You previously held the following belief based on "
+                "early evidence. New evidence is now presented. "
+                "Revise your belief explicitly, quantify the update, "
+                "and state whether the new evidence is sufficient "
+                "to overturn the prior."
+            ),
+            (
+                "The following scientific scenario contains a hidden "
+                "confounder. Identify it, explain how it affects "
+                "causal interpretation, and state what experiment "
+                "would isolate the true causal effect."
+            ),
+        ]
+        examples = []
+        for i in range(count):
+            topic = topics[i % len(topics)]
+            suffix = question_type_suffixes[i % len(question_type_suffixes)]
+            base = self.teacher.teachers[0].generate_training_example(
+                topic, difficulty=0.98, num_answers=5
+            )
+            examples.append(TrainingExample(
+                question=(
+                    f"[Synthetic Judgment Task]\n"
+                    f"Domain: {topic}\n"
+                    f"Scenario: {base.question}\n\n"
+                    f"{suffix}"
+                ),
+                answers=base.answers,
+                correct_indices=base.correct_indices,
+                difficulty=0.98,
+                domain=f"synthetic_judgment_{base.domain}",
+                explanation=(
+                    f"Synthetic judgment under uncertainty: "
+                    f"{base.explanation}"
+                ),
+            ))
+        return examples
+
     @property
-    def phase7_loop(self) -> Phase7TeacherStudentLoop:
-        """Access Phase 7 teacher-student loop directly."""
-        return self._phase7_loop
+    def phase6_loop(self) -> Phase7TeacherStudentLoop:
+        """Access Phase 6 (Niche Scientific) teacher-student loop."""
+        return self._phase6_loop
+
+    @property
+    def phase11_loop(self) -> Phase7TeacherStudentLoop:
+        """Access Phase 11 (Adversarial Robustness) teacher-student loop."""
+        return self._phase11_loop
 
 
 # ─── Phase Completion Monitor ─────────────────────────────────────────────────
