@@ -1,205 +1,99 @@
-# 🧠 NERO
+# Logiik
 
-A complete AI training framework implementing modern teacher-student architecture with local, attachable knowledge storage.
+Scientific reasoning AI framework. Trains a model through
+10 progressive curriculum phases from memorization to
+synthetic judgment under uncertainty.
 
-## 🎯 Key Features
+---
 
-- **Teacher-Student Architecture**: Connect to GPT-4/Claude APIs as teachers
-- **Structured Training**: Question + 5-10 answers curriculum format
-- **Generative Capabilities**: AI generates original answers, not just memorization
-- **Local Knowledge Base**: All learning stored in attachable `knowledge_base/` folder
-- **Real-time Dashboard**: Beautiful Streamlit interface for monitoring training
-- **REST API + WebSocket**: FastAPI server for training control and live updates
-- **Frontier Migration Kit (March 2026)**: MoE-ready self-hosted runtime + LangGraph orchestration for coding and biological aging discovery
+## Quick Start
 
-## 🚀 Quick Start
+### 1. Install dependencies
+pip install -r requirements.txt
 
-```bash
-# Install
-pip install -e .
-
-# Copy and configure environment
+### 2. Configure credentials
 cp .env.example .env
-# Edit .env and set your TEACHER_API_KEY
+# Edit .env — fill in PINECONE_API_KEY and FIREBASE_API_KEY
 
-# Start API server
-python -m cognita.api.server
+### 3. Verify environment
+python logiik/main.py --mode check
 
-# Launch dashboard (new terminal)
-streamlit run cognita/dashboard/app.py
-```
+### 4. Run tests
+python logiik/main.py --mode test
 
-## ⚙️ Frontier Migration Protocol (NERO)
+### 5. Start API + dashboard
+python logiik/main.py --mode api
+# Open http://localhost:8001 in browser
 
-Use this path to upgrade NERO from legacy dense local models to a frontier-aligned open-weight MoE architecture.
+### 6. Start GPU session (when GPU instance is running)
+python logiik/main.py --mode session
+# Send queries: POST http://localhost:5000/ask
 
-### 1) Run migration bootstrap
+---
 
-```bash
-bash scripts/migrate_frontier_stack.sh
-# Optional: fetch large model weights too
-bash scripts/migrate_frontier_stack.sh --with-ollama-pull
-```
+## Curriculum Phases
 
-This script backs up the current repo, installs vLLM/LangGraph/LlamaIndex dependencies, installs CUDA 12.4 PyTorch wheels, and prepares Ollama model runtime.
+| Phase | Name | Generative Ratio |
+|-------|------|-----------------|
+| 1 | Memorization | 10% |
+| 2 | Generation | 50% |
+| 3 | Abstraction | 80% |
+| 4 | Engineering Execution & Reliability | 85% |
+| 5 | Coding Mastery | 90% |
+| 6 | Scientific Reasoning & Experimental Design | 93% |
+| 7 | Niche Scientific Reasoning | 94% |
+| 8 | Scientific Image Analysis | 94% |
+| 9 | PDF / Textbook Ingestion | 95% |
+| 10 | Synthetic Judgment | 95% |
 
-### 2) Review migration config
+---
 
-- Main profile: `configs/frontier_stack.yaml`
-- Set backend (`ollama` or `vllm`), context goals (128K–10M), agent roles, RAG corpus path, and LoRA specialization settings.
-
-### 3) Start a frontier inference backend
-
-**Ollama path (simplest):**
-```bash
-ollama serve
-```
-
-**vLLM path (higher throughput):**
-```bash
-docker compose up vllm
-# OpenAI-compatible endpoint on http://localhost:8001/v1
-```
-
-### 4) Run stateful agentic workflow
-
-```bash
-python -m cognita.orchestration.bio_coding_graph
-```
-
-This runs a dual-agent (researcher + coder) LangGraph cycle for biological-aging hypothesis synthesis and code planning.
-
-### 5) Add RAG corpus
-
-Place papers/notes under:
-
-```text
-knowledge_base/aging_papers/
-```
-
-Then wire your query engine in orchestration nodes (placeholder hooks are included).
-
-## 🐳 Docker
-
-```bash
-# Set your API key
-export TEACHER_API_KEY="your-api-key"
-
-# Start all services
-docker-compose up
-
-# API available at: http://localhost:8000
-# Dashboard at:     http://localhost:8501
-```
-
-## 📁 Repository Structure
+## Architecture
 
 ```
-cognita/
-├── core/
-│   ├── brain.py              # Transformer + LoRA + Generative head
-│   └── teacher_interface.py  # OpenAI & Anthropic teacher connectors
-├── training/
-│   └── curriculum.py         # 7-phase curriculum engine
-├── storage/
-│   └── checkpoint_manager.py # Local knowledge base manager
-├── dashboard/
-│   └── app.py                # Streamlit real-time dashboard
-├── orchestration/
-│   └── bio_coding_graph.py   # LangGraph workflow for coding + aging
-└── api/
-    └── server.py             # FastAPI + WebSocket server
-
-configs/
-├── model_config.yaml         # Model & training hyperparameters
-├── teacher_config.yaml       # Teacher API configuration
-└── frontier_stack.yaml       # Frontier migration target profile
-
-scripts/
-└── migrate_frontier_stack.sh # One-shot migration bootstrap
-
-knowledge_base/               # Attachable AI knowledge folder
-├── embeddings/               # Vector representations for RAG
-├── checkpoints/              # Model snapshots
-├── training_data/            # Training session history
-└── metadata/                 # Indices & configuration
+logiik/
+  core/           Training loops, generation, Phase 10 PPO
+  storage/        Pinecone, Firebase, Redis
+  embeddings/     SPECTER2 (text), BLIP-2 (images)
+  retrieval/      RAG pipeline
+  ingestion/      Phase 8 (images), Phase 9 (PDFs)
+  curriculum/     Phase definitions and config
+  utils/          Logging, helpers, env check
+  api/            FastAPI endpoints
+  dashboard/      Web dashboard
+  session_manager/ GPU session manager
+  tests/          Full test suite
 ```
 
-## 🎓 Training Phases
+---
 
-| Phase | Name | Description | Generative Ratio |
-|-------|------|-------------|-----------------|
-| 1 | **Memorization** | Learn from teacher's Q+A structure | 10% |
-| 2 | **Generation** | Create original answers | 50% |
-| 3 | **Abstraction** | Cross-domain knowledge synthesis | 80% |
-| 4 | **Engineering Execution & Reliability** | Build production software behavior: planning, testing, debugging, and quality gates | 85% |
-| 5 | **Coding Mastery** | Complete coding understanding across common languages | 90% |
-| 6 | **Scientific Reasoning & Experimental Design** | Build falsifiable hypothesis, controls, uncertainty handling, and evidence discipline | 93% |
-| 7 | **Drosophila AI Framework** | Specialized framework design for Drosophila genetics with axon guidance and neural wiring focus | 95% |
+## Services
 
-See `docs/PHASE_CURRICULUM_REVIEW.md` for a detailed readiness review and a recommended 7-phase progression that adds two bridge phases before advanced coding/scientific specialization.
+| Service | Status | Purpose |
+|---------|--------|---------|
+| Pinecone | Required | Vector embeddings (dim=768) |
+| Firebase | Required | Full-text storage (REST API) |
+| Redis | Optional | Hot cache (disabled by default) |
+| AWS S3 | Deferred | Model weights storage |
+| GPU | Deferred | Training and inference |
 
-## 🏗️ Architecture
+---
 
-```
-Teacher API (GPT-4 / Claude)
-        │
-        ▼ Q + 5-10 Answers
-┌───────────────────────────────┐
-│           NEROBrain            │
-│  ┌─────────────────────────┐  │
-│  │  Base Transformer (LM)  │  │
-│  │  + LoRA Adapters        │  │
-│  └───────────┬─────────────┘  │
-│              │ hidden states   │
-│  ┌───────────▼─────────────┐  │
-│  │    Generative Head      │  │
-│  │ (original answer synth) │  │
-│  └─────────────────────────┘  │
-└───────────────────────────────┘
-        │
-        ▼
-knowledge_base/ (attachable)
-```
+## Pre-Deployment Security Checklist
 
-## 📡 API Reference
+Before storing real training data or model weights:
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/initialize` | POST | Initialize brain + teacher |
-| `/train/start` | POST | Begin training |
-| `/train/stop` | POST | Stop training |
-| `/ask` | POST | Query the trained AI |
-| `/knowledge/summary` | GET | Knowledge base stats |
-| `/knowledge/export` | POST | Export knowledge package |
-| `/ws/training` | WebSocket | Live training metrics |
+- [ ] Rotate Pinecone API key
+- [ ] Rotate Firebase API key
+- [ ] Confirm .env is in .gitignore
+- [ ] Set Firebase security rules
+- [ ] Set Pinecone index access controls
+- [ ] Configure AWS S3 bucket (when ready)
+- [ ] Set GPU instance firewall rules
 
-## 🔧 Configuration
+---
 
-Edit `configs/model_config.yaml` to customize:
-- Base model (default: `microsoft/DialoGPT-medium`)
-- LoRA rank and alpha
-- Training batch size and learning rate
-- Curriculum phase durations
+## Legacy
 
-Edit `configs/teacher_config.yaml` to configure:
-- Teacher provider (`openai` or `anthropic`)
-- Examples per topic and difficulty range
-- Evaluation criteria
-
-## 📦 Knowledge Portability
-
-The `knowledge_base/` folder is fully portable. To transfer a trained model:
-
-```python
-from cognita.storage.checkpoint_manager import KnowledgeBaseManager
-
-manager = KnowledgeBaseManager("./knowledge_base")
-
-# Export
-manager.export_knowledge_package("./exports", "my_model_v1")
-
-# Import on another machine
-manager.import_knowledge_package("./exports/nero_knowledge_my_model_v1.zip")
-```
+This project was previously named NERO / Cognita.
+Legacy code is preserved at _legacy_backup/.
