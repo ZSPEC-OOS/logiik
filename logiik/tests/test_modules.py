@@ -581,6 +581,34 @@ class TestPhase10:
             for s in PHASE10_STAGES
         )
 
+    def test_scientific_language_scenarios(self):
+        from logiik.core.phase10_training import ScenarioGenerator
+        gen = ScenarioGenerator()
+        # Scientific language problems now in SCIENTIFIC_PROBLEMS
+        scenarios = gen.generate(
+            "phase10_stage_integrated_scientific", count=4
+        )
+        assert len(scenarios) == 4
+        for prompt, gt, knowable in scenarios:
+            assert isinstance(prompt, str)
+            assert len(prompt) > 10
+            assert isinstance(gt, str)
+            assert isinstance(knowable, bool)
+        print("Scientific language scenarios in generator: OK")
+
+    def test_reward_engine_uses_phase12_weights(self):
+        from logiik.core.phase10_training import RewardEngine
+        from logiik.curriculum.phases import get_phase
+        engine = RewardEngine()
+        p12 = get_phase(12)
+        expected_weights = p12.metadata["reward_weights"]
+        assert engine._weights["correctness"] == (
+            expected_weights["correctness"]
+        )
+        assert engine._weights["consistency"] == (
+            expected_weights["consistency"]
+        )
+
 
 # ─── API ──────────────────────────────────────────────────────────────────────
 
@@ -643,6 +671,35 @@ class TestAPI:
         data = r2.json()
         assert data["coverage_ratio"] == 0.85
         assert data["iteration"] == 99
+
+    def test_no_pydantic_deprecation_warning(self):
+        import warnings
+        from logiik.api.endpoints import app
+        from fastapi.testclient import TestClient
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            client = TestClient(app)
+            payload = {
+                "phase_id": 6,
+                "phase": "Niche & Interdisciplinary "
+                         "Scientific Reasoning",
+                "coverage_ratio": 0.50,
+                "saturation_score": 0.40,
+                "covered_prompts": 10,
+                "total_prompts": 20,
+                "is_complete": False,
+                "iteration": 10,
+            }
+            client.post("/logiik/phase/update", json=payload)
+            pydantic_warnings = [
+                x for x in w
+                if "dict()" in str(x.message)
+                or "model_dump" in str(x.message)
+            ]
+            assert len(pydantic_warnings) == 0, (
+                f"Pydantic deprecation warning still present: "
+                f"{pydantic_warnings}"
+            )
 
 
 # ─── SESSION MANAGER ─────────────────────────────────────────────────────────

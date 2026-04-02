@@ -1,5 +1,17 @@
 """
 Logiik Phase 10 — Synthetic Judgment.
+
+Sub-phases (internal to Synthetic Judgment — do NOT confuse with
+top-level curriculum phases 1–12). These internal labels use
+phase10_stage_* naming and are intentionally decoupled from
+the top-level phase numbering. Synthetic Judgment is Phase 12
+in the curriculum but this module retains phase10_stage_* labels
+internally for stability:
+
+# Reference: logiik/curriculum/phases.py Phase 12 metadata.
+# Note: This module is the PPO training engine for the
+# Synthetic Judgment phase (curriculum Phase 12).
+# Internal stage labels use phase10_stage_* for stability.
 """
 import random
 import math
@@ -162,6 +174,98 @@ class ScenarioGenerator:
                 "without: (1) a control group, (2) temporal precedence of B before D, "
                 "(3) ruling out confounders, (4) experimental manipulation of B. The small "
                 "n=45 also limits statistical power."
+            ),
+            "knowable": True,
+        },
+        {
+            "prompt": (
+                "The following sentence appears in a Nature paper "
+                "results section:\n"
+                "'Treatment X significantly increased expression "
+                "of gene Y (p=0.048, n=8, fold-change=1.3).'\n\n"
+                "Classify this sentence by epistemic status. "
+                "Identify all statistical and interpretive concerns. "
+                "State what the sentence actually establishes vs. "
+                "what it implies."
+            ),
+            "ground_truth": (
+                "Epistemic status: experimental_result with "
+                "overclaiming. Concerns: n=8 is severely underpowered "
+                "for the claimed effect; p=0.048 is marginal and "
+                "likely inflated by low power; fold-change=1.3 is "
+                "modest. The sentence establishes a statistically "
+                "marginal association in a small sample. It does not "
+                "establish biological significance or reproducibility."
+            ),
+            "knowable": True,
+        },
+        {
+            "prompt": (
+                "A methods section states:\n"
+                "'Samples were processed and analysed using "
+                "standard procedures.'\n\n"
+                "Evaluate this methods description for "
+                "reproducibility. State specifically what "
+                "information is missing and why each omission "
+                "matters for replication."
+            ),
+            "ground_truth": (
+                "This description is irreproducible. Missing: "
+                "specific protocols or citations, reagent sources "
+                "and lot numbers, instrument models and settings, "
+                "software versions, statistical analysis pipeline, "
+                "sample preparation details, quality control steps. "
+                "Each omission prevents independent replication."
+            ),
+            "knowable": True,
+        },
+        {
+            "prompt": (
+                "Given the following experimental output:\n"
+                "Group A: mean=45.2, SD=0.3, n=6\n"
+                "Group B: mean=44.9, SD=0.4, n=6\n"
+                "t-test: t=1.54, df=10, p=0.155\n\n"
+                "The authors conclude: 'There was no significant "
+                "difference between groups (p>0.05), confirming "
+                "the treatments are equivalent.'\n\n"
+                "Evaluate this conclusion. Is absence of evidence "
+                "evidence of absence here?"
+            ),
+            "ground_truth": (
+                "The conclusion conflates absence of evidence with "
+                "evidence of absence. n=6 per group provides very "
+                "low statistical power — a true difference could "
+                "easily be missed. Equivalence requires a "
+                "pre-specified equivalence margin and a TOST "
+                "procedure, not a non-significant t-test. "
+                "The data are uninformative, not confirmatory."
+            ),
+            "knowable": True,
+        },
+        {
+            "prompt": (
+                "You are asked to write Python code to analyse "
+                "the following RNA-seq count matrix. Columns are "
+                "samples (3 control, 3 treated). Rows are genes.\n\n"
+                "Describe the complete analysis pipeline: "
+                "normalisation method and justification, "
+                "differential expression test selection and "
+                "justification, multiple testing correction, "
+                "effect size reporting, and one quality control "
+                "step that must precede analysis."
+            ),
+            "ground_truth": (
+                "Pipeline: (1) QC — check library size distribution, "
+                "remove outlier samples by PCA. "
+                "(2) Normalisation — DESeq2 median-of-ratios or "
+                "TMM; justify over RPKM because count-based methods "
+                "are appropriate for discrete count data. "
+                "(3) DE test — negative binomial GLM (DESeq2/edgeR) "
+                "because RNA-seq counts are overdispersed. "
+                "(4) Multiple testing — Benjamini-Hochberg FDR. "
+                "(5) Effect size — report log2 fold-change with "
+                "confidence interval, not p-value alone. "
+                "n=3 per group is severely underpowered — flag this."
             ),
             "knowable": True,
         },
@@ -360,10 +464,11 @@ class EvaluationEngine:
 
 class RewardEngine:
     def __init__(self, weights: Optional[Dict[str, float]] = None):
-        phase10 = get_phase(10)
+        # Synthetic Judgment is Phase 12 in curriculum
+        phase12 = get_phase(12)
         default_weights = (
-            phase10.metadata.get("reward_weights", {})
-            if phase10 else {}
+            phase12.metadata.get("reward_weights", {})
+            if phase12 else {}
         )
         self._weights = weights or {
             "correctness": default_weights.get("correctness", 0.30),
