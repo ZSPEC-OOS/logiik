@@ -212,7 +212,7 @@ async def update_phase_metrics(update: PhaseMetricsUpdate):
     """
     global _phase_metrics
     _phase_metrics = {
-        **update.dict(),
+        **update.model_dump(),
         "last_updated": datetime.utcnow().isoformat(),
     }
     return {"status": "updated"}
@@ -234,7 +234,7 @@ async def update_training_metrics(update: TrainingMetricsUpdate):
     """Called by training loop to push latest metrics."""
     global _training_metrics
     _training_metrics = {
-        **update.dict(),
+        **update.model_dump(),
         "last_updated": datetime.utcnow().isoformat(),
     }
     return {"status": "updated"}
@@ -266,7 +266,7 @@ async def update_ingestion_stats(update: IngestionStatsUpdate):
     """Called by Phase 9 pipeline after each PDF to push stats."""
     global _ingestion_stats
     _ingestion_stats = {
-        **update.dict(),
+        **update.model_dump(),
         "last_updated": datetime.utcnow().isoformat(),
     }
     return {"status": "updated"}
