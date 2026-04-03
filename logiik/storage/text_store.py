@@ -86,6 +86,9 @@ class TextStore:
     """
 
     def __init__(self):
+        from pathlib import Path as _Path
+        from dotenv import load_dotenv as _load_dotenv
+        _load_dotenv(_Path(__file__).parent.parent.parent / ".env", override=True)
         self._project = os.environ.get(
             "FIREBASE_PROJECT",
             CONFIG["firebase"]["project"]
