@@ -528,6 +528,9 @@ class Phase10Trainer:
         self._ppo_config = ppo_config or {}
         self._current_stage_index = 0
         self._stage_metrics: Dict[str, List[Dict]] = {stage: [] for stage in PHASE10_STAGES}
+        # Raw per-scenario reward components stored for phase completion evaluation.
+        # Each entry is a flat Dict with keys: correctness, calibration, abstention, consistency.
+        self._all_components: List[Dict] = []
         self._ppo_trainer = None
         logger.info("Phase10Trainer initialised.")
 
@@ -575,6 +578,7 @@ class Phase10Trainer:
             reward, components = self._reward_engine.compute_reward(output, ground_truth, knowable)
             stage_rewards.append(reward)
             stage_components.append(components)
+            self._all_components.append(components)
             if self._ppo_trainer is not None:
                 self._ppo_step(prompt, output, reward)
         metrics = self._aggregate_metrics(stage, stage_rewards, stage_components)
@@ -593,8 +597,95 @@ class Phase10Trainer:
             metrics = self.train_stage(stage, n_scenarios_per_stage)
             all_metrics[stage] = metrics
             logger.info(f"Completed {stage}: avg_reward={metrics['avg_reward']:.4f}")
-        logger.info("All Phase 10 stages complete.")
+
+        phase_complete, completion_diag = self.is_phase_complete()
+        all_metrics["_phase_completion"] = completion_diag
+        if phase_complete:
+            logger.info(
+                "Phase 12 COMPLETE — brier=%.4f (<%.2f), abstention_precision=%.4f (>%.2f)",
+                completion_diag["avg_brier_score"], completion_diag["brier_threshold"],
+                completion_diag["abstention_precision"], completion_diag["abstention_threshold"],
+            )
+        else:
+            logger.warning(
+                "Phase 12 not yet complete — brier=%.4f (need <%.2f), "
+                "abstention_precision=%.4f (need >%.2f). Run more scenarios.",
+                completion_diag.get("avg_brier_score", -1),
+                completion_diag.get("brier_threshold", 0.20),
+                completion_diag.get("abstention_precision", -1),
+                completion_diag.get("abstention_threshold", 0.80),
+            )
         return all_metrics
+
+    def is_phase_complete(self) -> Tuple[bool, Dict]:
+        """
+        Evaluate Phase 12 completion criteria against all accumulated scenarios.
+
+        Criteria (from phases.py Phase 12 completion_criteria):
+          - all_stages_complete: every stage in PHASE10_STAGES has at least one run
+          - brier_score_below:        aggregate avg Brier score < 0.20
+          - abstention_precision_above: correct abstentions / total abstentions > 0.80
+
+        Brier score is recovered from the calibration reward component:
+          calibration = -brier_score  →  brier_score = -calibration
+
+        Abstention precision is derived from the abstention reward component:
+          +0.6 = correct abstention (abstained on unknowable)
+          -0.5 = incorrect abstention (abstained on knowable)
+          Precision = correct / (correct + incorrect)
+
+        Returns:
+            (complete: bool, diagnostics: Dict)
+        """
+        phase12 = get_phase(12)
+        criteria = phase12.completion_criteria if phase12 else {}
+        required_brier      = criteria.get("brier_score_below", 0.20)
+        required_abs_prec   = criteria.get("abstention_precision_above", 0.80)
+
+        all_stages_done = all(
+            len(self._stage_metrics.get(s, [])) > 0
+            for s in PHASE10_STAGES
+        )
+
+        if not self._all_components:
+            return False, {
+                "all_stages_complete": all_stages_done,
+                "reason": "no_scenario_data",
+                "phase_complete": False,
+            }
+
+        # Brier score: calibration component = -brier, so brier = -calibration
+        calibration_vals = [c.get("calibration", 0.0) for c in self._all_components]
+        avg_brier = round(float(-sum(calibration_vals) / len(calibration_vals)), 4)
+
+        # Abstention precision: +0.6 = correct abstain, -0.5 = incorrect abstain
+        # Values for non-abstentions are +1.0 or -1.5 — excluded from precision calc.
+        _abs_correct   = sum(1 for c in self._all_components if abs(c.get("abstention", 0) - 0.6) < 0.01)
+        _abs_incorrect = sum(1 for c in self._all_components if abs(c.get("abstention", 0) + 0.5) < 0.01)
+        _abs_total = _abs_correct + _abs_incorrect
+        abstention_precision = round(_abs_correct / _abs_total, 4) if _abs_total > 0 else 0.0
+
+        brier_ok      = avg_brier < required_brier
+        abs_prec_ok   = abstention_precision >= required_abs_prec
+        complete      = all_stages_done and brier_ok and abs_prec_ok
+
+        diagnostics = {
+            "all_stages_complete":   all_stages_done,
+            "avg_brier_score":       avg_brier,
+            "brier_threshold":       required_brier,
+            "brier_ok":              brier_ok,
+            "abstention_precision":  abstention_precision,
+            "abstention_threshold":  required_abs_prec,
+            "abstention_ok":         abs_prec_ok,
+            "n_scenarios_evaluated": len(self._all_components),
+            "phase_complete":        complete,
+        }
+        log_event(
+            "core.phase10_training",
+            f"Phase 12 completion check: {diagnostics}",
+            level="info",
+        )
+        return complete, diagnostics
 
     def get_metrics(self) -> Dict:
         return self._stage_metrics
