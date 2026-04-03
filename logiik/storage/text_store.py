@@ -261,14 +261,14 @@ class TextStore:
 
     def store_training_record(self, record_id: str, record: Dict) -> bool:
         """Sync one Q&A training record to Firestore immediately on generation."""
-        url = f"{self._base}/logiik/training/{record_id}"
+        url = f"{self._base}/training_records/{record_id}"
         return self._patch(url, self._sanitize({
             **record,
             "timestamp": datetime.utcnow().isoformat(),
         }))
 
     def list_training_records(self, limit: int = 500) -> List[Dict]:
-        docs = self._list(f"{self._base}/logiik/training")
+        docs = self._list(f"{self._base}/training_records")
         return sorted(docs, key=lambda d: d.get("timestamp", ""))[:limit]
 
     # ─── Summary ─────────────────────────────────────────────────────────

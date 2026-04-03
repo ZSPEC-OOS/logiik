@@ -6,6 +6,10 @@ import os
 import re
 import yaml
 from pathlib import Path
+from dotenv import load_dotenv
+
+_ROOT = Path(__file__).parent.parent.parent  # repo root
+load_dotenv(_ROOT / ".env", override=False)
 
 _CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
