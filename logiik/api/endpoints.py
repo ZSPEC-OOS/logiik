@@ -647,133 +647,146 @@ _qa_stop_flag: bool = False
 _TEACHER_CFG = Path(__file__).parents[2] / "configs" / "teacher_config.yaml"
 
 
-def _load_curriculum_phases() -> list:
-    """Load nlp_curriculum from teacher_config.yaml as ordered list of (phase_name, [topics])."""
+def _load_curriculum_phases() -> tuple:
+    """Load nlp_curriculum and examples_per_topic from teacher_config.yaml."""
     try:
         import yaml
         with open(_TEACHER_CFG) as f:
             cfg = yaml.safe_load(f)
         phases = cfg.get("nlp_curriculum", {})
-        return [(name, topics) for name, topics in phases.items() if isinstance(topics, list)]
+        examples_per_topic = cfg.get("teacher", {}).get("curriculum", {}).get("examples_per_topic", 20)
+        phase_list = [(name, topics) for name, topics in phases.items() if isinstance(topics, list)]
+        return phase_list, examples_per_topic
     except Exception as e:
         logger.warning("Could not load curriculum: %s", e)
-        return [("NLP fundamentals", ["language model training", "text classification"])]
+        return [("NLP fundamentals", ["language model training"])], 5
 
 
 async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
-    """Background task: work through curriculum phases+topics generating Q&A pairs."""
+    """Background task: for each phase → each topic → generate examples_per_topic Q&As."""
     global _qa_stop_flag, _training_metrics, _phase_metrics
 
     import openai as _openai
     import json as _json
 
     client = _openai.OpenAI(api_key=api_key, base_url=base_url)
-    phases = _load_curriculum_phases()
+    phases, examples_per_topic = _load_curriculum_phases()
     total_phases = len(phases)
-    examples_done = 0
+    total_examples = 0
     current_phase_idx = 0
 
-    def _update_phase_metrics(phase_name, topic_idx, topic_total, iteration):
-        covered = topic_idx
-        coverage = round(covered / max(topic_total, 1), 4)
-        saturation = round(min(iteration / max(topic_total * 2, 1), 1.0), 4)
-        _phase_metrics.update({
-            "phase_id": current_phase_idx + 1,
-            "phase": phase_name,
-            "coverage_ratio": coverage,
-            "saturation_score": saturation,
-            "covered_prompts": covered,
-            "total_prompts": topic_total,
-            "is_complete": covered >= topic_total,
-            "iteration": iteration,
-            "last_updated": datetime.utcnow().isoformat(),
-        })
-
     _training_metrics.update({
-        "training_active": True,
-        "training_complete": False,
+        "training_active": True, "training_complete": False,
         "current_phase": phases[0][0] if phases else "generating",
         "last_updated": datetime.utcnow().isoformat(),
     })
-    logger.info("Q&A generation started — %d phases", total_phases)
+    logger.info("Q&A generation started — %d phases, %d Q&As per topic",
+                total_phases, examples_per_topic)
+
+    async def _generate_one(topic: str, difficulty: float) -> dict:
+        prompt = (
+            f"Generate a training Q&A example about: {topic}\n"
+            f"Difficulty: {difficulty*100:.0f}%\n\n"
+            "Respond with ONLY a JSON object — no markdown, no explanation:\n"
+            '{"question":"...","answers":["...","...","...","...","..."],'
+            '"correct_indices":[0],"explanation":"...","domain":"..."}'
+        )
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, lambda: client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {"role": "system", "content": "You are a teacher AI. Always respond with valid JSON only."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=1,
+            max_tokens=1500,
+        ))
+        raw = (response.choices[0].message.content or "").strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        return _json.loads(raw.strip())
 
     try:
         while not _qa_stop_flag and current_phase_idx < total_phases:
             phase_name, topics = phases[current_phase_idx]
-            topic_total = len(topics)
-            topics_done_in_phase = 0
-            iteration = 0
+            topic_count = len(topics)
+            topics_completed = 0  # topics where all examples_per_topic are done
 
-            logger.info("Starting phase %d/%d: %s (%d topics)",
-                        current_phase_idx + 1, total_phases, phase_name, topic_total)
+            logger.info("Phase %d/%d: %s — %d topics × %d Q&As",
+                        current_phase_idx + 1, total_phases, phase_name,
+                        topic_count, examples_per_topic)
 
-            for topic in topics:
+            for t_idx, topic in enumerate(topics):
                 if _qa_stop_flag:
                     break
-                difficulty = round(0.1 + (topics_done_in_phase / max(topic_total, 1)) * 0.8, 2)
-                prompt = (
-                    f"Generate a training Q&A example about: {topic}\n"
-                    f"Difficulty: {difficulty*100:.0f}%\n\n"
-                    "Respond with ONLY a JSON object — no markdown, no explanation — with these keys:\n"
-                    '{"question":"...","answers":["...","...","...","...","..."],'
-                    '"correct_indices":[0],"explanation":"...","domain":"..."}'
-                )
-                try:
-                    loop = asyncio.get_event_loop()
-                    response = await loop.run_in_executor(None, lambda: client.chat.completions.create(
-                        model=model_id,
-                        messages=[
-                            {"role": "system", "content": "You are a teacher AI. Always respond with valid JSON only."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        temperature=1,
-                        max_tokens=1500,
-                    ))
-                    raw = (response.choices[0].message.content or "").strip()
-                    if raw.startswith("```"):
-                        raw = raw.split("```")[1]
-                        if raw.startswith("json"):
-                            raw = raw[4:]
-                    raw = raw.strip()
-                    _json.loads(raw)  # validate
-                    examples_done += 1
-                    topics_done_in_phase += 1
-                    iteration += 1
 
+                examples_this_topic = 0
+
+                for ex_idx in range(examples_per_topic):
+                    if _qa_stop_flag:
+                        break
+
+                    difficulty = round(0.1 + (ex_idx / max(examples_per_topic - 1, 1)) * 0.8, 2)
+                    try:
+                        await _generate_one(topic, difficulty)
+                        examples_this_topic += 1
+                        total_examples += 1
+                    except Exception as e:
+                        err = str(e)
+                        logger.warning("Q&A error (topic=%s, ex=%d): %s", topic[:40], ex_idx, err)
+                        wait = 10 if ("429" in err or "rate_limit" in err.lower()) else 3
+                        await asyncio.sleep(wait)
+                        continue
+
+                    # Update metrics after every generated example
+                    topic_coverage = round(topics_completed / max(topic_count, 1), 4)
+                    topic_saturation = round(examples_this_topic / max(examples_per_topic, 1), 4)
+                    _phase_metrics.update({
+                        "phase_id": current_phase_idx + 1,
+                        "phase": phase_name,
+                        "coverage_ratio": topic_coverage,
+                        "saturation_score": topic_saturation,
+                        "covered_prompts": topics_completed,
+                        "total_prompts": topic_count,
+                        "is_complete": False,
+                        "iteration": total_examples,
+                        "last_updated": datetime.utcnow().isoformat(),
+                    })
                     _training_metrics.update({
-                        "examples_processed": examples_done,
-                        "bank_count": examples_done,
-                        "step": examples_done,
+                        "examples_processed": total_examples,
+                        "bank_count": total_examples,
+                        "step": total_examples,
                         "current_phase": phase_name,
                         "last_updated": datetime.utcnow().isoformat(),
                     })
-                    _update_phase_metrics(phase_name, topics_done_in_phase, topic_total, iteration)
-                    logger.info("Q&A #%d [phase %d/%d] %s", examples_done,
-                                current_phase_idx + 1, total_phases, topic[:55])
+                    logger.info("Q&A #%d  phase=%d/%d  topic=%d/%d  ex=%d/%d  %s",
+                                total_examples, current_phase_idx+1, total_phases,
+                                t_idx+1, topic_count, examples_this_topic,
+                                examples_per_topic, topic[:40])
+                    await asyncio.sleep(3)
 
-                except Exception as e:
-                    err = str(e)
-                    logger.warning("Q&A generation error (topic=%s): %s", topic, err)
-                    wait = 10 if ("429" in err or "rate_limit" in err.lower()) else 3
-                    await asyncio.sleep(wait)
-                    continue
+                topics_completed += 1
 
-                await asyncio.sleep(3)
-
-            # Phase complete — mark and advance
-            _update_phase_metrics(phase_name, topic_total, topic_total, iteration)
+            # Phase done
+            _phase_metrics.update({
+                "coverage_ratio": 1.0, "saturation_score": 1.0,
+                "covered_prompts": topic_count, "total_prompts": topic_count,
+                "is_complete": True, "last_updated": datetime.utcnow().isoformat(),
+            })
             current_phase_idx += 1
             if current_phase_idx < total_phases:
                 _training_metrics["current_phase"] = phases[current_phase_idx][0]
 
         if not _qa_stop_flag:
             _training_metrics["training_complete"] = True
-            logger.info("All phases complete — %d Q&As generated", examples_done)
+            logger.info("All phases complete — %d Q&As generated", total_examples)
 
     finally:
         _training_metrics["training_active"] = False
         _training_metrics["last_updated"] = datetime.utcnow().isoformat()
-        logger.info("Q&A generation stopped — %d examples total", examples_done)
+        logger.info("Q&A generation stopped — %d examples total", total_examples)
 
 
 class TrainingStartRequest(BaseModel):
