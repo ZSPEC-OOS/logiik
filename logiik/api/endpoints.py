@@ -691,22 +691,29 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
             prompt = (
                 f"Generate a training Q&A example about: {topic}\n"
                 f"Difficulty: {difficulty*100:.0f}%\n\n"
-                "Return JSON with keys: question (string), answers (array of 5 strings), "
-                "correct_indices (array of ints), explanation (string), domain (string)."
+                "Respond with ONLY a JSON object — no markdown, no explanation — with these keys:\n"
+                '{"question":"...","answers":["...","...","...","...","..."],'
+                '"correct_indices":[0],"explanation":"...","domain":"..."}'
             )
             try:
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(None, lambda: client.chat.completions.create(
                     model=model_id,
                     messages=[
-                        {"role": "system", "content": "You are a teacher AI creating training data."},
+                        {"role": "system", "content": "You are a teacher AI. Always respond with valid JSON only."},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=1,
-                    response_format={"type": "json_object"},
-                    max_tokens=500,
+                    max_tokens=600,
                 ))
-                data = _json.loads(response.choices[0].message.content)
+                raw = (response.choices[0].message.content or "").strip()
+                # Strip markdown code fences if present
+                if raw.startswith("```"):
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                raw = raw.strip()
+                data = _json.loads(raw)
                 examples_done += 1
                 phase_idx += 1
 
