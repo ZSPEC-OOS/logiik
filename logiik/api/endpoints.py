@@ -846,6 +846,8 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         pass
         return questions
 
+    _backoff_counts: dict = {}
+
     try:
         for phase_id, phase_name, topics in phases:
             if _qa_stop_flag:
@@ -959,7 +961,19 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                     except Exception as e:
                         err = str(e)
                         logger.warning("Q&A error (topic=%s): %s", topic[:40], err)
-                        wait = 15 if ("429" in err or "rate_limit" in err.lower()) else 4
+                        _overloaded = (
+                            "429" in err
+                            or "rate_limit" in err.lower()
+                            or "engine_overloaded" in err.lower()
+                            or "overloaded" in err.lower()
+                        )
+                        if _overloaded:
+                            _backoff_key = topic[:40]
+                            _backoff_counts[_backoff_key] = _backoff_counts.get(_backoff_key, 0) + 1
+                            wait = min(120, 15 * (2 ** (_backoff_counts[_backoff_key] - 1)))
+                        else:
+                            _backoff_counts.pop(topic[:40], None)
+                            wait = 4
                         await asyncio.sleep(wait)
                         continue
 
