@@ -371,13 +371,31 @@ function _applyTTLToInputs(ttlSeconds) {
 }
 
 /* ─── Timing Test ────────────────────────────────────────────── */
+// Each entry is sent TWICE: first call = cold/miss, second = warm/hit.
+// The cold-vs-warm delta reveals whether the provider has its own cache
+// and, by implication, roughly how long it keeps responses.
 const TEST_PROMPTS = [
   'What is supervised learning?',
   'Explain gradient descent briefly.',
-  'Define overfitting in machine learning.',
   'What is a neural network activation function?',
-  'Describe backpropagation in one sentence.',
 ];
+
+async function _timedAsk(prompt) {
+  const t0 = performance.now();
+  let ok = false; let cacheHit = null;
+  try {
+    const res = await fetch(`${API}/ask`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ question: prompt, require_original: false }),
+    });
+    ok = res.ok;
+    // Check for provider-side cache headers (varies by gateway)
+    const ch = res.headers.get('x-cache') || res.headers.get('x-prompt-cache-hit') || '';
+    if (ch) cacheHit = /hit|true/i.test(ch);
+  } catch (_) { ok = false; }
+  return { ms: performance.now() - t0, ok, cacheHit };
+}
 
 async function runCacheTimingTest() {
   const btn     = document.getElementById('btn-timing-test');
@@ -398,115 +416,170 @@ async function runCacheTimingTest() {
   recEl.className   = 'ctr-recommendation';
   drEl.innerHTML    = '';
 
-  const times = [];
+  const coldTimes = []; // first call per prompt
+  const warmTimes = []; // immediate repeat of the same prompt
+  const headerHits = []; // provider cache-hit headers seen
 
   for (let i = 0; i < TEST_PROMPTS.length; i++) {
-    statusEl.textContent = `Running test ${i + 1} / ${TEST_PROMPTS.length}…`;
-    const t0 = performance.now();
-    let ok = false;
+    const p = TEST_PROMPTS[i];
 
-    try {
-      const res = await fetch(`${API}/ask`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ question: TEST_PROMPTS[i], require_original: false }),
-      });
-      ok = res.ok;
-    } catch (_) { ok = false; }
+    // ── Cold call ──
+    statusEl.textContent = `Probe ${i + 1}/${TEST_PROMPTS.length} — cold call…`;
+    const cold = await _timedAsk(p);
+    await new Promise(r => setTimeout(r, 200));
 
-    const ms = performance.now() - t0;
+    // ── Warm call (same prompt, immediate) ──
+    statusEl.textContent = `Probe ${i + 1}/${TEST_PROMPTS.length} — warm call…`;
+    const warm = await _timedAsk(p);
+    await new Promise(r => setTimeout(r, 300));
 
-    if (ok) {
-      times.push(ms);
-      timesEl.innerHTML +=
-        `<div class="ctr-time-row">
-           <span>Test ${i + 1} — <em style="color:var(--muted);font-size:.78rem;">${TEST_PROMPTS[i]}</em></span>
-           <span class="ctr-time-val">${(ms / 1000).toFixed(2)}s</span>
-         </div>`;
-    } else {
-      timesEl.innerHTML +=
-        `<div class="ctr-time-row error">
-           <span>Test ${i + 1}</span>
-           <span class="ctr-time-val">API unreachable</span>
-         </div>`;
-    }
+    if (cold.ok) coldTimes.push(cold.ms);
+    if (warm.ok) warmTimes.push(warm.ms);
+    if (warm.cacheHit !== null) headerHits.push(warm.cacheHit);
 
-    await new Promise(r => setTimeout(r, 400));
+    const coldStr = cold.ok  ? `${(cold.ms  / 1000).toFixed(2)}s` : 'err';
+    const warmStr = warm.ok  ? `${(warm.ms  / 1000).toFixed(2)}s` : 'err';
+    const ratio   = (cold.ok && warm.ok) ? (cold.ms / warm.ms).toFixed(1) : '—';
+    const hitBadge = warm.cacheHit === true  ? '<span style="color:var(--green);font-size:.75rem;"> header:HIT</span>'
+                   : warm.cacheHit === false ? '<span style="color:var(--red);font-size:.75rem;"> header:MISS</span>'
+                   : '';
+
+    timesEl.innerHTML +=
+      `<div class="ctr-time-row">
+         <span><em style="color:var(--muted);font-size:.78rem;">${p}</em></span>
+         <span class="ctr-time-val" style="gap:.5rem;display:flex;align-items:center;">
+           cold&nbsp;<strong>${coldStr}</strong>
+           &rarr; warm&nbsp;<strong>${warmStr}</strong>
+           &nbsp;(${ratio}×)${hitBadge}
+         </span>
+       </div>`;
   }
 
-  if (times.length === 0) {
+  if (coldTimes.length === 0) {
     statusEl.textContent = 'Could not reach the API — is the server running and initialized?';
     if (btn) { btn.disabled = false; btn.textContent = '↻ Retry Test'; }
     return;
   }
 
-  const avg = times.reduce((a, b) => a + b, 0) / times.length;
-  const min = Math.min(...times);
-  const max = Math.max(...times);
-  const std = Math.sqrt(times.map(t => (t - avg) ** 2).reduce((a, b) => a + b, 0) / times.length);
+  const coldAvg = coldTimes.reduce((a, b) => a + b, 0) / coldTimes.length;
+  const warmAvg = warmTimes.length ? warmTimes.reduce((a, b) => a + b, 0) / warmTimes.length : coldAvg;
+  const speedup  = coldAvg / warmAvg;
+  const coldStd  = Math.sqrt(coldTimes.map(t => (t - coldAvg) ** 2).reduce((a, b) => a + b, 0) / coldTimes.length);
 
-  statusEl.textContent = `Done — ${times.length}/${TEST_PROMPTS.length} succeeded`;
+  // Detect provider-side caching from header signals or time delta
+  const headerCacheDetected = headerHits.length > 0 && headerHits.some(h => h === true);
+  const timeCacheDetected   = speedup >= 1.8; // warm ≥ 1.8× faster = provider cache likely active
+  const providerCacheActive = headerCacheDetected || timeCacheDetected;
+
+  statusEl.textContent = `Done — ${coldTimes.length}/${TEST_PROMPTS.length} probes succeeded`;
   avgEl.textContent    =
-    `Avg ${(avg / 1000).toFixed(2)}s  ·  min ${(min / 1000).toFixed(2)}s  ·  max ${(max / 1000).toFixed(2)}s  ·  ±${(std / 1000).toFixed(2)}s`;
+    `Cold avg ${(coldAvg / 1000).toFixed(2)}s  ·  Warm avg ${(warmAvg / 1000).toFixed(2)}s  ·  Speedup ${speedup.toFixed(1)}×`;
 
-  const rec = _buildRecommendation(avg, min, max, std, times.length);
+  const rec = _buildRecommendation(coldAvg, warmAvg, coldStd, speedup, providerCacheActive, coldTimes.length);
 
-  recEl.textContent = `Recommended TTL: ${_fmtTTL(rec.ttlSeconds)}  —  ${rec.tier}`;
+  recEl.textContent = `Recommended app TTL: ${_fmtTTL(rec.ttlSeconds)}  —  ${rec.tier}`;
   recEl.className   = `ctr-recommendation ctr-rec-${rec.cssKey}`;
-  drEl.innerHTML    = _renderDeepReview(rec, avg, min, max, std, times.length);
+  drEl.innerHTML    = _renderDeepReview(rec, coldAvg, warmAvg, coldStd, speedup, providerCacheActive, coldTimes.length);
 
   if (btn) { btn.disabled = false; btn.textContent = '↻ Re-run Test'; }
 }
 
 /* ─── Recommendation Engine ──────────────────────────────────── */
-function _buildRecommendation(avgMs, minMs, maxMs, stdMs, n) {
-  const avgS = avgMs / 1000;
-  const stdS = stdMs / 1000;
-  const cv   = stdS / avgS; // coefficient of variation
+// Known provider-side cache windows (conservative lower-bound, seconds).
+// The app TTL must stay UNDER this so we never serve a stale entry when
+// the provider has already evicted its own cache.
+const PROVIDER_CACHE_WINDOWS = {
+  openai:    300,   // ~5 min (prompt caching, 1024-token min)
+  anthropic: 300,   // 5 min ephemeral / up to 60 min extended
+  moonshot:  600,   // Kimi context cache: 10 min default observed
+  generic:   240,   // safe floor when provider is unknown: 4 min
+};
+
+function _detectProviderWindow(baseUrl) {
+  if (!baseUrl) return PROVIDER_CACHE_WINDOWS.generic;
+  const u = baseUrl.toLowerCase();
+  if (u.includes('openai.com'))    return PROVIDER_CACHE_WINDOWS.openai;
+  if (u.includes('anthropic.com')) return PROVIDER_CACHE_WINDOWS.anthropic;
+  if (u.includes('moonshot'))      return PROVIDER_CACHE_WINDOWS.moonshot;
+  return PROVIDER_CACHE_WINDOWS.generic;
+}
+
+function _buildRecommendation(coldAvgMs, warmAvgMs, coldStdMs, speedup, providerCacheActive, n) {
+  const coldS = coldAvgMs / 1000;
+  const stdS  = coldStdMs / 1000;
+  const cv    = stdS / coldS;
+
+  // How long the provider keeps its own cache (seconds)
+  const providerWindowS = _detectProviderWindow(modelConfig.baseUrl);
 
   let ttlSeconds, tier, cssKey, rationale, advice;
 
-  if (avgS < 1) {
-    ttlSeconds = 300; tier = 'Low Value'; cssKey = 'low-value';
-    rationale = 'Responses are very fast (< 1 s). The overhead of a cache lookup may rival the savings. A short TTL keeps things tidy without much benefit.';
-    advice    = 'Consider skipping caching entirely, or set a short TTL as insurance against rare slow responses.';
-  } else if (avgS < 3) {
-    ttlSeconds = 900; tier = 'Moderate'; cssKey = 'moderate';
-    rationale = 'Responses take 1–3 s. Caching gives a noticeable speedup for repeated or similar questions during a training phase.';
-    advice    = 'A 15-minute TTL covers most intra-phase repetition without stale-response risk.';
-  } else if (avgS < 8) {
-    ttlSeconds = 1800; tier = 'High Value'; cssKey = 'high-value';
-    rationale = 'Responses take 3–8 s each. Caching meaningfully reduces training wall-time and API costs.';
-    advice    = '30 minutes is a solid default — covers an entire phase with room for model warm-up variance.';
-  } else if (avgS < 20) {
-    ttlSeconds = 3600; tier = 'Critical'; cssKey = 'critical';
-    rationale = 'Responses are slow (8–20 s). Without caching, repeated similar questions burn significant time. Caching is strongly recommended.';
-    advice    = '1 hour ensures cached answers survive across phase restarts and brief pauses.';
+  if (providerCacheActive) {
+    // Provider cache detected: our TTL must be shorter than the provider window
+    // so every app-cache hit is still within the provider's cache too.
+    // Use 80% of the detected provider window as the safe ceiling.
+    const ceiling = Math.floor(providerWindowS * 0.8);
+
+    if (coldS < 2) {
+      // Fast model + provider cache active: caching is mainly an API-cost play
+      ttlSeconds = Math.min(ceiling, 180); tier = 'Cost Optimised'; cssKey = 'moderate';
+      rationale  = `Provider-side cache detected (speedup ${speedup.toFixed(1)}×). Responses are fast — the main benefit of app caching is reducing billable API calls, not latency.`;
+      advice     = `TTL capped at ${_fmtTTL(Math.min(ceiling, 180))} — safely inside the provider's ~${_fmtTTL(providerWindowS)} window.`;
+    } else {
+      ttlSeconds = Math.min(ceiling, Math.round(coldS * 20)); tier = 'Provider-Aligned'; cssKey = 'high-value';
+      rationale  = `Provider-side cache detected (speedup ${speedup.toFixed(1)}×, cold ${coldS.toFixed(1)} s vs warm ${(warmAvgMs/1000).toFixed(1)} s). App TTL is capped inside the provider's ~${_fmtTTL(providerWindowS)} window so cached entries never go stale.`;
+      advice     = `${_fmtTTL(ttlSeconds)} keeps your app cache in sync with the provider — repeated questions stay fast and consistent.`;
+    }
   } else {
-    ttlSeconds = 7200; tier = 'Essential'; cssKey = 'essential';
-    rationale = 'Responses exceed 20 s. Training without a cache will be severely bottlenecked by API latency.';
-    advice    = '2 hours is the minimum effective TTL. Consider 4–8 hours if your training sessions run overnight.';
+    // No provider cache detected — app-level cache is the only layer.
+    // Base TTL on cold response time only; apply safety margin for variance.
+    if (coldS < 1) {
+      ttlSeconds = 300; tier = 'Low Value'; cssKey = 'low-value';
+      rationale  = 'Responses are very fast and no provider cache was detected. App caching has minimal speed benefit but reduces API call count.';
+      advice     = 'A 5-minute TTL is a light safety net without adding stale-response risk.';
+    } else if (coldS < 4) {
+      ttlSeconds = 600; tier = 'Moderate'; cssKey = 'moderate';
+      rationale  = `Cold responses take ~${coldS.toFixed(1)} s. No provider cache detected — app cache provides the only speedup layer.`;
+      advice     = '10 minutes balances freshness with meaningful savings per phase.';
+    } else if (coldS < 10) {
+      ttlSeconds = 900; tier = 'High Value'; cssKey = 'high-value';
+      rationale  = `Cold responses take ~${coldS.toFixed(1)} s with no provider cache. Caching here is the primary performance tool.`;
+      advice     = '15 minutes covers most intra-phase question repetition cycles.';
+    } else if (coldS < 25) {
+      ttlSeconds = 1800; tier = 'Critical'; cssKey = 'critical';
+      rationale  = `Slow model (~${coldS.toFixed(1)} s), no provider cache. App caching is essential to keep training throughput viable.`;
+      advice     = '30 minutes ensures cached answers survive phase restarts and brief pauses.';
+    } else {
+      ttlSeconds = 3600; tier = 'Essential'; cssKey = 'essential';
+      rationale  = `Very slow model (${coldS.toFixed(1)} s/prompt), no provider cache. Without app caching, training will be severely rate-limited by latency.`;
+      advice     = '1 hour minimum — consider 2–4 hours for overnight runs.';
+    }
+
+    // High variance with no provider cache: extend TTL to smooth outliers
+    if (cv > 0.4) {
+      ttlSeconds = Math.round(ttlSeconds * 1.4);
+      rationale += ` High response variance (CV ${cv.toFixed(2)}) — TTL extended for outlier protection.`;
+    }
   }
 
-  // Variance penalty — high variability → extend TTL for stability
-  if (cv > 0.4) {
-    ttlSeconds = Math.round(ttlSeconds * 1.5);
-    rationale += ` High response variability (CV=${cv.toFixed(2)}) detected — TTL extended by 50 % for stability.`;
-  }
-
-  return { ttlSeconds, tier, cssKey, rationale, advice, cv, avgS, stdS };
+  return { ttlSeconds, tier, cssKey, rationale, advice, cv, coldS, stdS, providerWindowS, providerCacheActive, speedup };
 }
 
-function _renderDeepReview(rec, avgMs, minMs, maxMs, stdMs, n) {
-  const { ttlSeconds, tier, rationale, advice, cv, avgS, stdS } = rec;
-  const costLabel = avgS > 15 ? 'Very High' : avgS > 7 ? 'High' : avgS > 2 ? 'Medium' : 'Low';
-  const cvLabel   = cv < 0.15 ? 'Very stable' : cv < 0.30 ? 'Stable' : cv < 0.50 ? 'Moderate variance' : 'High variance';
+function _renderDeepReview(rec, coldAvgMs, warmAvgMs, coldStdMs, speedup, providerCacheActive, n) {
+  const { ttlSeconds, tier, rationale, advice, cv, coldS, stdS, providerWindowS } = rec;
+  const cvLabel    = cv < 0.15 ? 'Very stable' : cv < 0.30 ? 'Stable' : cv < 0.50 ? 'Moderate' : 'High variance';
+  const cacheLabel = providerCacheActive ? `Detected (${speedup.toFixed(1)}×)` : 'Not detected';
+  const cacheColor = providerCacheActive ? 'var(--green)' : 'var(--muted)';
+  const costLabel  = coldS > 15 ? 'Very High' : coldS > 7 ? 'High' : coldS > 2 ? 'Medium' : 'Low';
 
-  const varNote = cv > 0.4
-    ? `<li>High variability (CV ${cv.toFixed(2)}) — responses fluctuate strongly; a longer TTL guards against slow outliers.</li>`
-    : '';
-  const costNote = avgS > 5
-    ? `<li>At ${avgS.toFixed(1)} s/prompt, uncached training would cost ~<strong>${Math.round(3600 / avgS)} API calls/hr</strong>.</li>`
+  const providerNote = providerCacheActive
+    ? `<li>Provider-side caching is <strong style="color:var(--green)">active</strong> — warm call was ${speedup.toFixed(1)}× faster than cold.</li>
+       <li>App TTL is capped at <strong>${_fmtTTL(ttlSeconds)}</strong> — safely inside the provider's ~${_fmtTTL(providerWindowS)} window to avoid stale hits.</li>`
+    : `<li>No provider-side caching detected — warm call wasn't significantly faster than cold (${speedup.toFixed(1)}×).</li>
+       <li>App cache is the <strong>only</strong> performance layer — TTL based on cold latency alone.</li>`;
+
+  const costNote = coldS > 5
+    ? `<li>At ${coldS.toFixed(1)} s/prompt uncached, training incurs ~<strong>${Math.round(3600 / coldS)} cold API calls/hr</strong>.</li>`
     : '';
 
   return `
@@ -515,20 +588,28 @@ function _renderDeepReview(rec, avgMs, minMs, maxMs, stdMs, n) {
 
       <div class="dr-grid">
         <div class="dr-stat">
-          <div class="dr-label">Avg Latency</div>
-          <div class="dr-val">${(avgMs / 1000).toFixed(2)} s</div>
+          <div class="dr-label">Cold Latency</div>
+          <div class="dr-val">${(coldAvgMs / 1000).toFixed(2)} s</div>
         </div>
         <div class="dr-stat">
-          <div class="dr-label">Std Dev</div>
-          <div class="dr-val">±${(stdMs / 1000).toFixed(2)} s  <span style="font-size:.75rem;color:var(--muted)">${cvLabel}</span></div>
+          <div class="dr-label">Warm Latency</div>
+          <div class="dr-val">${(warmAvgMs / 1000).toFixed(2)} s <span style="font-size:.75rem;color:var(--muted)">${speedup.toFixed(1)}×</span></div>
+        </div>
+        <div class="dr-stat">
+          <div class="dr-label">Provider Cache</div>
+          <div class="dr-val" style="color:${cacheColor}">${cacheLabel}</div>
+        </div>
+        <div class="dr-stat">
+          <div class="dr-label">Variance</div>
+          <div class="dr-val">±${stdS.toFixed(2)} s <span style="font-size:.75rem;color:var(--muted)">${cvLabel}</span></div>
         </div>
         <div class="dr-stat">
           <div class="dr-label">API Cost Impact</div>
           <div class="dr-val">${costLabel}</div>
         </div>
         <div class="dr-stat">
-          <div class="dr-label">Samples</div>
-          <div class="dr-val">${n} / ${TEST_PROMPTS.length}</div>
+          <div class="dr-label">Safe App TTL</div>
+          <div class="dr-val">${_fmtTTL(ttlSeconds)}</div>
         </div>
       </div>
 
@@ -536,9 +617,7 @@ function _renderDeepReview(rec, avgMs, minMs, maxMs, stdMs, n) {
 
       <div class="dr-breakdown-title">Recommendation Reasoning</div>
       <ul class="dr-list">
-        <li>Each prompt takes ~<strong>${(avgMs / 1000).toFixed(2)} s</strong> — caching eliminates this cost on repeated questions.</li>
-        <li>Range: <strong>${(minMs / 1000).toFixed(2)} s – ${(maxMs / 1000).toFixed(2)} s</strong> across ${n} tests.</li>
-        ${varNote}
+        ${providerNote}
         ${costNote}
         <li>${advice}</li>
       </ul>
