@@ -676,6 +676,216 @@ def _saturation_score(recent_questions: List[str], pool: List[str]) -> float:
     return sum(scores) / len(scores)
 
 
+# ── Per-track generation limits ───────────────────────────────────────────────
+
+_TRACK_LIMITS = {
+    "foundation":  {"min": 10, "max": 20},   # diverse facts, not drills
+    "language":    {"min": 15, "max": 25},
+    "domain":      {"min": 20, "max": 35},
+    "execution":   {"min": 15, "max": 25},
+    "integration": {"min": 20, "max": 35},
+    "capstone":    {"min": 25, "max": 40},
+}
+
+# ── Deduplication ─────────────────────────────────────────────────────────────
+
+_DEDUP_THRESHOLD = 0.65  # Jaccard — skip generation if new Q is this similar to any in pool
+
+def _is_duplicate(question: str, pool: List[str]) -> bool:
+    """Return True if question is too similar to any question already in pool."""
+    if not pool:
+        return False
+    q_set = _word_set(question)
+    return any(_jaccard(q_set, _word_set(p)) >= _DEDUP_THRESHOLD for p in pool)
+
+
+# ── Phase-aware prompt construction ──────────────────────────────────────────
+
+def _phase_prompt(phase_name: str, track: str, description: str,
+                  topic: str, q_type: str, difficulty: float) -> tuple:
+    """
+    Build (system_msg, user_msg, expected_json_schema) for the given phase track.
+    Returns a 3-tuple: (sys_msg, user_msg, schema_hint).
+    """
+    diff_pct = f"{difficulty * 100:.0f}%"
+    q_type_readable = q_type.replace("_", " ")
+
+    if track == "foundation":
+        if "memorization" in phase_name:
+            sys_msg = (
+                "You are an expert scientific educator generating high-quality "
+                "supervised fine-tuning data. Each question must test a DIFFERENT "
+                "specific fact — never rephrase a question angle already used."
+            )
+            user_msg = (
+                f"Generate a '{q_type_readable}' multiple-choice question about: {topic}\n"
+                f"Difficulty: {diff_pct}\n\n"
+                "Requirements:\n"
+                "- Test ONE precise, specific fact (not a vague overview question)\n"
+                "- Wrong answers must be plausible but unambiguously incorrect to an expert\n"
+                "- Approach the topic from a fresh angle not yet covered\n\n"
+                "Respond with ONLY raw JSON:\n"
+                '{"question":"...","answers":["A","B","C","D","E"],'
+                '"correct_indices":[0],"explanation":"...","domain":"..."}'
+            )
+            schema = "mcq"
+        else:  # generation phase
+            sys_msg = (
+                "You are an expert scientific educator generating open-ended "
+                "fine-tuning data. Answers must be original and substantive, "
+                "not a rephrasing of the question."
+            )
+            user_msg = (
+                f"Generate a '{q_type_readable}' open-ended question about: {topic}\n"
+                f"Difficulty: {diff_pct}\n\n"
+                "Requirements:\n"
+                "- No multiple choice — requires a generated explanation\n"
+                "- Answer: 2-4 sentences of precise scientific language\n"
+                "- Explanation: expand on the mechanism or principle\n\n"
+                "Respond with ONLY raw JSON:\n"
+                '{"question":"...","answer":"...","explanation":"...","domain":"..."}'
+            )
+            schema = "open"
+
+    elif track == "language":
+        sys_msg = (
+            "You are a scientific writing and reasoning expert generating training data "
+            "that teaches precise scientific language, statistical interpretation, "
+            "and research methodology."
+        )
+        user_msg = (
+            f"Generate a '{q_type_readable}' question about: {topic}\n"
+            f"Difficulty: {diff_pct}\n"
+            f"Phase goal: {description}\n\n"
+            "Requirements:\n"
+            "- Use precise scientific register throughout\n"
+            "- Provide step-by-step reasoning in the answer\n"
+            "- Ground every claim in a specific principle, statistical concept, or mechanism\n\n"
+            "Respond with ONLY raw JSON:\n"
+            '{"question":"...","answer":"...","reasoning_steps":["step 1","step 2"],"domain":"..."}'
+        )
+        schema = "reasoning"
+
+    elif track == "domain":
+        sys_msg = (
+            "You are a domain expert generating training data for deep scientific reasoning. "
+            "Every answer must cite specific mechanisms, molecular pathways, or physical "
+            "principles — no generic placeholders allowed."
+        )
+        user_msg = (
+            f"Generate a '{q_type_readable}' question about: {topic}\n"
+            f"Difficulty: {diff_pct}\n"
+            f"Phase goal: {description}\n\n"
+            "Requirements:\n"
+            "- Name the specific mechanism, pathway, protein, or equation involved\n"
+            "- Stepwise reasoning required — do not jump to conclusions\n"
+            "- Identify at least one confounder, limitation, or assumption\n\n"
+            "Respond with ONLY raw JSON:\n"
+            '{"question":"...","answer":"...","reasoning_steps":["step 1","step 2"],'
+            '"mechanisms":["specific mechanism"],"caveats":["limitation"],"domain":"..."}'
+        )
+        schema = "domain"
+
+    elif track == "execution":
+        if "coding" in phase_name or "computing" in phase_name:
+            sys_msg = (
+                "You are a scientific computing expert generating training data for "
+                "research-grade code generation. Every task must be grounded in a real "
+                "scientific research workflow — no toy examples."
+            )
+            user_msg = (
+                f"Generate a '{q_type_readable}' coding task about: {topic}\n"
+                f"Difficulty: {diff_pct}\n\n"
+                "Requirements:\n"
+                "- Real scientific research context with realistic data/constraints\n"
+                "- Complete, runnable code with comments\n"
+                "- Explain what each section does and why\n\n"
+                "Respond with ONLY raw JSON:\n"
+                '{"question":"...","code":"...","explanation":"...","language":"python","domain":"..."}'
+            )
+            schema = "code"
+        else:
+            sys_msg = "You are an expert in research engineering, reliability, and failure analysis."
+            user_msg = (
+                f"Generate a '{q_type_readable}' scenario about: {topic}\n"
+                f"Difficulty: {diff_pct}\n"
+                f"Phase goal: {description}\n\n"
+                "Respond with ONLY raw JSON:\n"
+                '{"question":"...","answer":"...","reasoning_steps":["step 1"],"domain":"..."}'
+            )
+            schema = "reasoning"
+
+    elif track in ("integration", "capstone"):
+        sys_msg = (
+            "You are a scientific reasoning expert generating training data for high-level "
+            "synthesis and judgment under uncertainty. Answers must connect mechanisms across "
+            "domains and express calibrated confidence — not false certainty."
+        )
+        user_msg = (
+            f"Generate a '{q_type_readable}' question about: {topic}\n"
+            f"Difficulty: {diff_pct}\n"
+            f"Phase goal: {description}\n\n"
+            "Requirements:\n"
+            "- Connect mechanisms or findings across at least two scientific domains\n"
+            "- Express calibrated confidence (0.0–1.0) — uncertainty is a feature, not a flaw\n"
+            "- Explicitly state what is unknown or contested\n"
+            "- Reasoning chain must be traceable step by step\n\n"
+            "Respond with ONLY raw JSON:\n"
+            '{"question":"...","answer":"...","reasoning_chain":["step 1","step 2"],'
+            '"confidence":0.80,"caveats":["what is unknown"],"domain":"..."}'
+        )
+        schema = "synthesis"
+
+    else:
+        sys_msg = "You are an expert teacher generating scientific training data."
+        user_msg = (
+            f"Generate a '{q_type_readable}' question about: {topic}\n"
+            f"Difficulty: {diff_pct}\n\n"
+            "Respond with ONLY raw JSON:\n"
+            '{"question":"...","answer":"...","explanation":"...","domain":"..."}'
+        )
+        schema = "open"
+
+    return sys_msg, user_msg, schema
+
+
+def _build_completion(data: dict, schema: str) -> str:
+    """Convert parsed API response into a clean completion string for training."""
+    if schema == "mcq":
+        answers      = data.get("answers", [])
+        correct_idxs = data.get("correct_indices", [0])
+        correct_text = [answers[i] for i in correct_idxs if i < len(answers)]
+        return "\n".join(correct_text) + "\n\nExplanation: " + data.get("explanation", "")
+
+    if schema == "code":
+        return (
+            "```" + data.get("language", "python") + "\n"
+            + data.get("code", "") + "\n```"
+            + "\n\n" + data.get("explanation", "")
+        )
+
+    # All other schemas have an "answer" field + optional structured extras
+    result = data.get("answer", data.get("completion", ""))
+
+    steps = data.get("reasoning_steps") or data.get("reasoning_chain") or []
+    if steps:
+        result += "\n\nReasoning:\n" + "\n".join(f"{i+1}. {s}" for i, s in enumerate(steps))
+
+    mechanisms = data.get("mechanisms", [])
+    if mechanisms:
+        result += "\n\nKey mechanisms:\n" + "\n".join(f"- {m}" for m in mechanisms)
+
+    caveats = data.get("caveats", [])
+    if caveats:
+        result += "\n\nCaveats / limitations:\n" + "\n".join(f"- {c}" for c in caveats)
+
+    confidence = data.get("confidence")
+    if confidence is not None:
+        result += f"\n\nConfidence: {float(confidence):.0%}"
+
+    return result
+
+
 # ── Curriculum + phase config loaders ────────────────────────────────────────
 
 def _load_curriculum_phases() -> tuple:
@@ -795,14 +1005,11 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
         total_phases, min_per_topic, max_per_topic, total_saved,
     )
 
-    async def _call_teacher(topic: str, difficulty: float) -> dict:
-        sys_msg = "You are an expert teacher AI generating supervised fine-tuning data."
-        user_msg = (
-            f"Generate a training Q&A example about: {topic}\n"
-            f"Difficulty: {difficulty * 100:.0f}%\n\n"
-            "Respond with ONLY a raw JSON object — no markdown fences, no extra text:\n"
-            '{"question":"...","answers":["option A","option B","option C","option D","option E"],'
-            '"correct_indices":[0],"explanation":"...","domain":"..."}'
+    async def _call_teacher(phase_cfg, topic: str, q_type: str, difficulty: float) -> tuple:
+        """Returns (parsed_data_dict, schema_str)."""
+        sys_msg, user_msg, schema = _phase_prompt(
+            phase_cfg.name, phase_cfg.track, phase_cfg.description,
+            topic, q_type, difficulty,
         )
         messages = [
             {"role": "system", "content": sys_msg},
@@ -811,12 +1018,11 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
         loop = asyncio.get_event_loop()
 
         def _do_call(use_json_format: bool):
-            kwargs = dict(model=model_id, messages=messages, temperature=1, max_tokens=1500)
+            kwargs = dict(model=model_id, messages=messages, temperature=1, max_tokens=2000)
             if use_json_format:
                 kwargs["response_format"] = {"type": "json_object"}
             return client.chat.completions.create(**kwargs)
 
-        # Try with response_format first (OpenAI/compatible); fall back for models that reject it
         try:
             response = await loop.run_in_executor(None, lambda: _do_call(True))
         except Exception as e:
@@ -830,7 +1036,7 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        return _json.loads(raw.strip())
+        return _json.loads(raw.strip()), schema
 
     def _read_questions_from_disk(path: Path) -> List[str]:
         """Reload question texts already saved (for saturation tracking on resume)."""
@@ -849,10 +1055,19 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
 
     _backoff_counts: dict = {}
 
+    from logiik.curriculum.phases import get_phase as _get_phase
+
     try:
         for phase_id, phase_name, topics in phases:
             if _qa_stop_flag:
                 break
+
+            phase_cfg = _get_phase(phase_id)
+            track     = phase_cfg.track if phase_cfg else "foundation"
+            q_types   = (phase_cfg.question_types if phase_cfg else ["factual_recall"])
+            limits    = _TRACK_LIMITS.get(track, {"min": 15, "max": 25})
+            phase_min = limits["min"]
+            phase_max = limits["max"]
 
             criteria = _match_phase_criteria(phase_name, criteria_map)
             phase_coverage_threshold  = criteria.get("coverage_ratio", 0.95)
@@ -882,36 +1097,32 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
 
                 # Estimate how many examples are already on disk for this topic
                 # (approximate — stored sequentially, so divide equally)
-                approx_topic_saved = min(
-                    len(all_disk_questions[t_idx * min_per_topic:(t_idx + 1) * min_per_topic]),
-                    phase_saved,
-                )
-                # Rebuild per-topic question pool from disk slice
                 slice_start = sum(topics_per_q_count) if topics_per_q_count else 0
                 topic_pool: List[str] = all_disk_questions[slice_start:]
 
                 count_this_topic = len(topic_pool)
                 topic_saturated  = False
                 current_sat      = 0.0
+                q_type_idx       = count_this_topic % len(q_types)  # resume rotation
 
                 logger.info(
-                    "  Topic %d/%d: %s  (%d on disk)",
-                    t_idx + 1, topic_count, topic[:55], count_this_topic,
+                    "  Topic %d/%d [%s]: %s  (%d on disk, max %d)",
+                    t_idx + 1, topic_count, track, topic[:50], count_this_topic, phase_max,
                 )
 
                 ex_idx = count_this_topic  # continue from where we left off
 
                 while not _qa_stop_flag:
-                    # ── Hard cap ──────────────────────────────────────────
-                    if ex_idx >= max_per_topic:
+                    # ── Hard cap (phase-track-specific) ───────────────────
+                    if ex_idx >= phase_max:
                         logger.info(
-                            "  Topic '%s' hit max cap (%d) — moving on", topic[:40], max_per_topic
+                            "  Topic '%s' hit phase cap (%d) — moving on", topic[:40], phase_max
                         )
                         topic_saturated = True
                         break
 
                     # ── Saturation check (after minimum floor) ────────────
-                    if ex_idx >= min_per_topic and ex_idx % check_interval == 0:
+                    if ex_idx >= phase_min and ex_idx % check_interval == 0:
                         recent = topic_pool[-check_interval:]
                         prior  = topic_pool[:-check_interval]
                         current_sat = _saturation_score(recent, prior) if prior else 0.0
@@ -928,38 +1139,51 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                             break
 
                     # ── Generate one Q&A ──────────────────────────────────
+                    q_type     = q_types[q_type_idx % len(q_types)]
                     difficulty = round(
-                        0.1 + min(ex_idx / max(min_per_topic * 4, 1), 1.0) * 0.8, 2
+                        0.1 + min(ex_idx / max(phase_min * 4, 1), 1.0) * 0.8, 2
                     )
                     try:
-                        data = await _call_teacher(topic, difficulty)
+                        data, schema = await _call_teacher(phase_cfg, topic, q_type, difficulty)
 
-                        answers      = data.get("answers", [])
-                        correct_idxs = data.get("correct_indices", [0])
-                        correct_text = [answers[i] for i in correct_idxs if i < len(answers)]
-                        completion   = (
-                            "\n".join(correct_text)
-                            + "\n\nExplanation: " + data.get("explanation", "")
-                        )
+                        question = data.get("question", "")
+                        if not question:
+                            continue
+
+                        # ── Deduplication: skip near-identical questions ───
+                        if _is_duplicate(question, topic_pool):
+                            logger.debug(
+                                "  Skipped duplicate question for topic '%s'", topic[:40]
+                            )
+                            continue
+
+                        completion = _build_completion(data, schema)
                         record = {
-                            "prompt":          data["question"],
+                            "prompt":          question,
                             "completion":      completion,
                             "phase_id":        phase_id,
                             "phase_name":      phase_name,
+                            "track":           track,
+                            "question_type":   q_type,
                             "topic":           topic,
                             "domain":          data.get("domain", topic),
                             "difficulty":      difficulty,
-                            "answers":         answers,
-                            "correct_indices": correct_idxs,
+                            "schema":          schema,
                         }
+                        # Preserve MCQ fields when present
+                        if schema == "mcq":
+                            record["answers"]         = data.get("answers", [])
+                            record["correct_indices"] = data.get("correct_indices", [0])
+
                         _append_record(out_path, record)
                         _record_id = f"p{phase_id:02d}_{total_saved:06d}"
                         _fb_ok = _fb_store.store_training_record(_record_id, record)
                         if _fb_ok:
-                            logger.info("Firebase synced record %s", _record_id)
+                            logger.info("Firebase synced record %s  [%s]", _record_id, q_type)
                         else:
-                            logger.warning("Firebase sync FAILED for record %s (check FIREBASE_API_KEY in .env)", _record_id)
-                        topic_pool.append(data["question"])
+                            logger.warning("Firebase sync FAILED for record %s", _record_id)
+                        topic_pool.append(question)
+                        q_type_idx += 1
 
                         ex_idx      += 1
                         phase_saved += 1
