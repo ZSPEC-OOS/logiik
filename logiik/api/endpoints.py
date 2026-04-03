@@ -704,7 +704,7 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         {"role": "user", "content": prompt},
                     ],
                     temperature=1,
-                    max_tokens=600,
+                    max_tokens=1500,
                 ))
                 raw = (response.choices[0].message.content or "").strip()
                 # Strip markdown code fences if present
