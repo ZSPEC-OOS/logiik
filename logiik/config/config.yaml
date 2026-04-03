@@ -37,6 +37,7 @@ firebase:
     embeddings: "logiik/memory/embeddings"
     phase8_images: "logiik/phase8/images"
     phase9_chunks: "logiik/phase9/chunks"
+    training: "logiik/training"
 
 # ─── Redis Cache ─────────────────────────────────────────────────────────────
 cache:
