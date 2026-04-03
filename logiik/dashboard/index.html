@@ -1,1083 +1,811 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Logiik Dashboard</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <style>
-    :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --border: #2a2d3a;
-      --text: #e2e8f0;
-      --text-muted: #8892a4;
-      --green: #22c55e;
-      --yellow: #eab308;
-      --red: #ef4444;
-      --blue: #3b82f6;
-      --purple: #a855f7;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      font-size: 14px;
-    }
-    header {
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    header h1 { font-size: 20px; font-weight: 700; }
-    header span { color: var(--text-muted); font-size: 12px; }
-    .status-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--text-muted);
-    }
-    .status-dot.green { background: var(--green); }
-    .status-dot.yellow { background: var(--yellow); }
-    .status-dot.red { background: var(--red); }
-    nav {
-      display: flex;
-      gap: 0;
-      border-bottom: 1px solid var(--border);
-      padding: 0 24px;
-    }
-    nav button {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      padding: 12px 16px;
-      cursor: pointer;
-      font-size: 13px;
-      border-bottom: 2px solid transparent;
-      transition: all 0.15s;
-    }
-    nav button.active {
-      color: var(--text);
-      border-bottom-color: var(--blue);
-    }
-    nav button:hover { color: var(--text); }
-    .tab-content { display: none; padding: 24px; }
-    .tab-content.active { display: block; }
-    .grid { display: grid; gap: 16px; }
-    .grid-2 { grid-template-columns: 1fr 1fr; }
-    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
-    .grid-4 { grid-template-columns: repeat(4, 1fr); }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-    }
-    .card h3 {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 8px;
-    }
-    .metric {
-      font-size: 28px;
-      font-weight: 700;
-      line-height: 1;
-    }
-    .metric.green { color: var(--green); }
-    .metric.yellow { color: var(--yellow); }
-    .metric.red { color: var(--red); }
-    .metric.blue { color: var(--blue); }
-    .sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-    .progress-bar {
-      height: 6px;
-      background: var(--border);
-      border-radius: 3px;
-      margin-top: 8px;
-      overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%;
-      border-radius: 3px;
-      transition: width 0.5s ease;
-    }
-    .chart-wrap { position: relative; height: 200px; }
-    .query-box {
-      width: 100%;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-      color: var(--text);
-      font-size: 14px;
-      resize: vertical;
-      min-height: 80px;
-    }
-    .query-box:focus { outline: none; border-color: var(--blue); }
-    .btn {
-      padding: 10px 20px;
-      border-radius: 6px;
-      border: none;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      transition: opacity 0.15s;
-    }
-    .btn:hover { opacity: 0.85; }
-    .btn-primary { background: var(--blue); color: #fff; }
-    .btn-danger { background: var(--red); color: #fff; }
-    .result-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 12px;
-      margin-top: 8px;
-    }
-    .result-score {
-      font-size: 11px;
-      color: var(--text-muted);
-      float: right;
-    }
-    .result-source {
-      font-size: 11px;
-      color: var(--purple);
-      margin-top: 4px;
-    }
-    .result-text {
-      margin-top: 6px;
-      line-height: 1.5;
-    }
-    .log-entry {
-      font-size: 12px;
-      font-family: monospace;
-      color: var(--text-muted);
-      padding: 4px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .log-entry .ts { color: var(--blue); }
-    .log-entry .level-info { color: var(--green); }
-    .log-entry .level-warn { color: var(--yellow); }
-    .log-entry .level-error { color: var(--red); }
-    #log-container {
-      max-height: 400px;
-      overflow-y: auto;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px;
-    }
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 99px;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
-    .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
-    .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
-    .badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
-    @media (max-width: 768px) {
-      .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
-    }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LOGIIK — Scientific AI Training</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#060912;
+  --s1:#0d1117;
+  --s2:#131929;
+  --s3:#1a2235;
+  --border:#1e2840;
+  --text:#dde4f0;
+  --muted:#5a6a8a;
+  --dim:#8894aa;
+  --blue:#4f8ef7;
+  --green:#22c55e;
+  --yellow:#eab308;
+  --red:#ef4444;
+  --purple:#a855f7;
+  --orange:#f97316;
+  --tc-foundation:#4f8ef7;
+  --tc-language:#22c55e;
+  --tc-domain:#a855f7;
+  --tc-execution:#f97316;
+  --tc-integration:#eab308;
+  --tc-capstone:#ef4444;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;display:flex;height:100vh;overflow:hidden}
+
+/* ── Sidebar ── */
+#sidebar{width:220px;min-width:220px;background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100vh;overflow:hidden}
+#brand{padding:24px 20px 20px;border-bottom:1px solid var(--border)}
+#brand .wordmark{font-size:22px;font-weight:800;letter-spacing:0.12em;color:#fff;font-family:'Segoe UI',system-ui,sans-serif}
+#brand .wordmark span{color:var(--blue)}
+#brand .tagline{font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-top:4px}
+#nav{flex:1;padding:12px 0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;color:var(--dim);font-size:12.5px;font-weight:500;border-left:2px solid transparent;transition:all 0.15s;user-select:none}
+.nav-item:hover{color:var(--text);background:var(--s2)}
+.nav-item.active{color:#fff;border-left-color:var(--blue);background:var(--s2)}
+.nav-item .icon{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.nav-section{font-size:10px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;padding:16px 20px 6px}
+#sidebar-foot{padding:16px 20px;border-top:1px solid var(--border)}
+.api-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.dot.on{background:var(--green)}
+.dot.off{background:var(--red)}
+#howto-btn{margin-top:12px;width:100%;padding:8px;background:transparent;border:1px solid var(--blue);color:var(--blue);border-radius:6px;cursor:pointer;font-size:11.5px;font-weight:600;letter-spacing:0.04em;transition:all 0.15s}
+#howto-btn:hover{background:var(--blue);color:#fff}
+
+/* ── Main ── */
+#main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+.view{display:none;padding:28px 32px;min-height:100%}
+.view.active{display:block}
+.page-header{margin-bottom:24px}
+.page-title{font-size:20px;font-weight:700;color:#fff;letter-spacing:-0.01em}
+.page-sub{font-size:12px;color:var(--muted);margin-top:3px}
+
+/* ── Cards ── */
+.card{background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:20px}
+.card h3{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+
+/* ── Metrics ── */
+.metric{font-size:28px;font-weight:700;color:#fff;line-height:1;margin-bottom:4px}
+.metric.blue{color:var(--blue)}
+.metric.green{color:var(--green)}
+.metric.yellow{color:var(--yellow)}
+.metric.red{color:var(--red)}
+.metric.purple{color:var(--purple)}
+.metric-sub{font-size:11px;color:var(--muted)}
+
+/* ── Progress bar ── */
+.bar-track{height:6px;background:var(--s3);border-radius:3px;overflow:hidden;margin:8px 0 4px}
+.bar-fill{height:100%;border-radius:3px;transition:width 0.4s ease}
+
+/* ── Phase strip ── */
+#phase-strip{display:flex;gap:4px;margin-bottom:20px}
+.ps-seg{flex:1;height:8px;border-radius:4px;background:var(--s3);transition:all 0.3s;cursor:default;position:relative}
+.ps-seg.done{opacity:1}
+.ps-seg.active{box-shadow:0 0 8px currentColor}
+
+/* ── Badges ── */
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase}
+.b-green{background:#14432a;color:var(--green)}
+.b-blue{background:#1a2e52;color:var(--blue)}
+.b-yellow{background:#3d3310;color:var(--yellow)}
+.b-red{background:#3b1515;color:var(--red)}
+.b-purple{background:#2d1a45;color:var(--purple)}
+.b-gray{background:var(--s3);color:var(--dim)}
+
+/* ── Charts ── */
+.chart-box{position:relative;height:180px;margin-top:8px}
+.chart-box.tall{height:240px}
+
+/* ── Phase list ── */
+.phase-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;border:1px solid var(--border);margin-bottom:6px;background:var(--s1);transition:border-color 0.2s}
+.phase-row.current{border-color:var(--blue);background:var(--s2)}
+.phase-row.done{opacity:0.6}
+.ph-num{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.ph-info{flex:1}
+.ph-name{font-size:12.5px;font-weight:600;color:#fff}
+.ph-track{font-size:10px;color:var(--muted);text-transform:capitalize}
+.ph-status{font-size:11px}
+
+/* ── Curriculum track cards ── */
+.track-section{margin-bottom:24px}
+.track-label{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.track-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.track-name{font-size:12px;font-weight:700;text-transform:capitalize;letter-spacing:0.04em}
+.track-count{font-size:11px;color:var(--muted)}
+.phase-cards{display:flex;gap:10px;flex-wrap:wrap}
+.phase-card{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px;min-width:180px;flex:1;border-left-width:3px}
+.pc-id{font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;display:inline-block;margin-bottom:8px}
+.pc-name{font-size:13px;font-weight:700;color:#fff;margin-bottom:6px}
+.pc-meta{font-size:10px;color:var(--muted);display:flex;gap:10px}
+
+/* ── Query ── */
+textarea.qbox{width:100%;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:12px;font-size:13px;font-family:inherit;resize:vertical;min-height:90px;outline:none;transition:border-color 0.2s}
+textarea.qbox:focus{border-color:var(--blue)}
+.btn{padding:8px 18px;border-radius:6px;border:none;cursor:pointer;font-size:12.5px;font-weight:600;transition:all 0.15s}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-primary:hover{background:#3a7ce8}
+.btn-ghost{background:var(--s3);color:var(--dim);border:1px solid var(--border)}
+.btn-ghost:hover{color:var(--text)}
+.result-card{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:8px}
+.result-score{font-size:10px;color:var(--muted);margin-bottom:6px}
+.result-src{font-size:11px;color:var(--blue);margin-bottom:6px;font-weight:600}
+.result-text{font-size:12px;color:var(--dim);line-height:1.6}
+
+/* ── Logs ── */
+#log-box{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px;font-family:'Cascadia Code','Consolas',monospace;font-size:11.5px;height:480px;overflow-y:auto}
+.log-line{padding:2px 0;line-height:1.6}
+.log-ts{color:var(--muted)}
+.log-info{color:var(--blue)}
+.log-warn{color:var(--yellow)}
+.log-err{color:var(--red)}
+
+/* ── Modal ── */
+#modal-bg{display:none;position:fixed;inset:0;background:#000000bb;z-index:999;overflow-y:auto;padding:32px 16px}
+#modal-box{max-width:700px;margin:0 auto;background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:32px}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+.modal-head h2{font-size:17px;font-weight:700;color:#fff}
+.modal-close{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
+.step{border-left:3px solid var(--border);padding-left:16px;margin-bottom:20px}
+.step-title{font-weight:700;font-size:12.5px;margin-bottom:8px}
+.step pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;margin:8px 0;font-family:'Cascadia Code','Consolas',monospace}
+.step p{font-size:12px;color:var(--dim);line-height:1.7}
+code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadia Code','Consolas',monospace;font-size:11px}
+
+/* ── Overview hero ── */
+.hero{background:linear-gradient(135deg,#0d1a35 0%,#0d1117 100%);border:1px solid var(--border);border-radius:12px;padding:28px;margin-bottom:16px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;right:-40px;top:-40px;width:200px;height:200px;background:radial-gradient(circle,#4f8ef715 0%,transparent 70%)}
+.hero-title{font-size:13px;font-weight:700;color:var(--blue);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px}
+.hero-phrase{font-size:24px;font-weight:800;color:#fff;letter-spacing:-0.02em;margin-bottom:6px}
+.hero-sub{font-size:12px;color:var(--muted)}
+
+@media(max-width:900px){
+  #sidebar{width:180px;min-width:180px}
+  .g4{grid-template-columns:repeat(2,1fr)}
+}
+</style>
 </head>
 <body>
 
-<header>
-  <div class="status-dot" id="api-dot"></div>
-  <h1>Logiik</h1>
-  <span id="api-status">Connecting...</span>
-  <button onclick="showHowTo()" style="margin-left:auto;background:#1e3a5f;
-    border:1px solid #3b82f6;color:#3b82f6;padding:6px 14px;border-radius:6px;
-    cursor:pointer;font-size:13px;font-weight:600">
-    ? How To Build Your Dataset
-  </button>
-</header>
+<!-- ═══════════════════════════════════════════════════════ SIDEBAR -->
+<div id="sidebar">
+  <div id="brand">
+    <div class="wordmark">L<span>O</span>GIIK</div>
+    <div class="tagline">Scientific AI Training System</div>
+  </div>
+  <div id="nav">
+    <div class="nav-item active" onclick="nav('overview',this)"><span class="icon">◈</span>Overview</div>
+    <div class="nav-section">Training</div>
+    <div class="nav-item" onclick="nav('phases',this)"><span class="icon">⬡</span>Phase Monitor</div>
+    <div class="nav-item" onclick="nav('curriculum',this)"><span class="icon">≋</span>Curriculum</div>
+    <div class="nav-item" onclick="nav('training',this)"><span class="icon">◎</span>Training Metrics</div>
+    <div class="nav-section">Infrastructure</div>
+    <div class="nav-item" onclick="nav('knowledge',this)"><span class="icon">⬡</span>Knowledge Base</div>
+    <div class="nav-item" onclick="nav('gpu',this)"><span class="icon">▣</span>GPU</div>
+    <div class="nav-section">Tools</div>
+    <div class="nav-item" onclick="nav('query',this)"><span class="icon">⌕</span>Query</div>
+    <div class="nav-item" onclick="nav('logs',this)"><span class="icon">≡</span>Logs</div>
+  </div>
+  <div id="sidebar-foot">
+    <div class="api-row"><div class="dot" id="api-dot"></div><span id="api-label">Connecting...</span></div>
+    <button id="howto-btn" onclick="openModal()">? How To Build Dataset</button>
+  </div>
+</div>
 
-<!-- How-To Modal -->
-<div id="howto-modal" style="display:none;position:fixed;inset:0;
-     background:#000000cc;z-index:1000;overflow-y:auto;padding:40px 16px">
-  <div style="max-width:720px;margin:0 auto;background:#1a1d27;
-       border:1px solid #2a2d3a;border-radius:10px;padding:32px">
+<!-- ═══════════════════════════════════════════════════════ MAIN -->
+<div id="main">
 
-    <div style="display:flex;justify-content:space-between;
-         align-items:center;margin-bottom:24px">
-      <h2 style="font-size:18px;font-weight:700">
-        How To Build Your Training Dataset
-      </h2>
-      <button onclick="hideHowTo()" style="background:none;border:none;
-        color:#8892a4;font-size:20px;cursor:pointer;line-height:1">✕</button>
+<!-- ── OVERVIEW ── -->
+<div class="view active" id="v-overview">
+  <div class="hero">
+    <div class="hero-title">LOGIIK · 12-Phase Curriculum</div>
+    <div class="hero-phrase">Scientific AI Training Pipeline</div>
+    <div class="hero-sub">Track generation progress across all phases, monitor training metrics, and manage your knowledge base.</div>
+  </div>
+  <div id="phase-strip" title="12-phase curriculum progress"></div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="card">
+      <h3>Active Phase</h3>
+      <div class="metric blue" id="ov-phase-num">—</div>
+      <div class="metric-sub" id="ov-phase-name">—</div>
     </div>
+    <div class="card">
+      <h3>Coverage</h3>
+      <div class="metric" id="ov-coverage">—</div>
+      <div class="bar-track"><div class="bar-fill" id="ov-cov-bar" style="width:0%;background:var(--blue)"></div></div>
+      <div class="metric-sub">Target 95%</div>
+    </div>
+    <div class="card">
+      <h3>Saturation</h3>
+      <div class="metric" id="ov-saturation">—</div>
+      <div class="bar-track"><div class="bar-fill" id="ov-sat-bar" style="width:0%;background:var(--purple)"></div></div>
+      <div class="metric-sub">Target 90%</div>
+    </div>
+    <div class="card">
+      <h3>Training Loss</h3>
+      <div class="metric" id="ov-loss">—</div>
+      <div class="metric-sub" id="ov-step">Step —</div>
+    </div>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Coverage Over Time</h3>
+      <div class="chart-box"><canvas id="ov-cov-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Training Loss Over Time</h3>
+      <div class="chart-box"><canvas id="ov-loss-chart"></canvas></div>
+    </div>
+  </div>
+</div>
 
-    <div style="display:flex;flex-direction:column;gap:20px;font-size:13px;line-height:1.7">
+<!-- ── PHASE MONITOR ── -->
+<div class="view" id="v-phases">
+  <div class="page-header">
+    <div class="page-title">Phase Monitor</div>
+    <div class="page-sub">Real-time coverage and saturation for the active phase</div>
+  </div>
+  <div class="grid g3" style="margin-bottom:14px">
+    <div class="card">
+      <h3>Current Phase</h3>
+      <div class="metric blue" id="ph-num">—</div>
+      <div class="metric-sub" id="ph-name-full">—</div>
+      <div style="margin-top:10px" id="ph-track-badge"></div>
+    </div>
+    <div class="card">
+      <h3>Coverage Ratio</h3>
+      <div class="metric" id="ph-cov">—</div>
+      <div class="bar-track"><div class="bar-fill" id="ph-cov-bar" style="width:0%;background:var(--blue)"></div></div>
+      <div class="metric-sub">Target: 95%</div>
+    </div>
+    <div class="card">
+      <h3>Saturation Score</h3>
+      <div class="metric" id="ph-sat">—</div>
+      <div class="bar-track"><div class="bar-fill" id="ph-sat-bar" style="width:0%;background:var(--purple)"></div></div>
+      <div class="metric-sub">Target: 90%</div>
+    </div>
+  </div>
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="card">
+      <h3>Phase Status</h3>
+      <div id="ph-status-badge" style="margin-bottom:8px"><span class="badge b-gray">Waiting</span></div>
+      <div class="metric-sub" id="ph-iter">Iteration: —</div>
+    </div>
+    <div class="card">
+      <h3>Coverage Over Time</h3>
+      <div class="chart-box"><canvas id="ph-cov-chart"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>All 12 Phases</h3>
+    <div id="all-phases-list" style="margin-top:4px"></div>
+  </div>
+</div>
 
-      <!-- Step 1 -->
-      <div style="border-left:3px solid #3b82f6;padding-left:16px">
-        <div style="color:#3b82f6;font-weight:700;margin-bottom:6px">
-          STEP 1 — Set up local mode (no accounts needed yet)
-        </div>
-        <div style="color:#e2e8f0">
-          Open <code style="background:#0f1117;padding:2px 6px;border-radius:3px">logiik/config/config.yaml</code>
-          and change one line:
-        </div>
-        <pre style="background:#0f1117;padding:12px;border-radius:6px;
-             margin-top:8px;color:#22c55e;font-size:12px;overflow-x:auto">backend: "faiss"   # was "pinecone" — uses local disk instead</pre>
-        <div style="color:#8892a4;margin-top:6px">
-          You don't need Pinecone or Firebase until you're ready to train.
-          FAISS stores vectors locally on your machine.
-        </div>
-      </div>
+<!-- ── CURRICULUM ── -->
+<div class="view" id="v-curriculum">
+  <div class="page-header">
+    <div class="page-title">Curriculum</div>
+    <div class="page-sub" id="curr-meta">12 phases across 6 tracks</div>
+  </div>
+  <div id="curr-tracks"></div>
+</div>
 
-      <!-- Step 2 -->
-      <div style="border-left:3px solid #22c55e;padding-left:16px">
-        <div style="color:#22c55e;font-weight:700;margin-bottom:6px">
-          STEP 2 — Run generation for all 12 phases
-        </div>
-        <div style="color:#e2e8f0;margin-bottom:8px">
-          Start the Logiik server, then let all 12 phases run to completion.
-          The dashboard Phase Monitor shows progress. Each phase finishes when
-          both bars hit their targets (Coverage 95%, Saturation 90%).
-        </div>
-        <pre style="background:#0f1117;padding:12px;border-radius:6px;
-             color:#22c55e;font-size:12px;overflow-x:auto">python -m logiik.main</pre>
-        <div style="color:#8892a4;margin-top:6px">
-          This runs on CPU. No GPU needed. Let it run — it may take hours
-          depending on how many topics you provide.
-        </div>
-      </div>
+<!-- ── TRAINING ── -->
+<div class="view" id="v-training">
+  <div class="page-header">
+    <div class="page-title">Training Metrics</div>
+    <div class="page-sub">Loss, steps, and banked example counts</div>
+  </div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="card">
+      <h3>Training Loss</h3>
+      <div class="metric" id="tr-loss">—</div>
+      <div class="metric-sub" id="tr-valloss">Val: —</div>
+    </div>
+    <div class="card">
+      <h3>Step</h3>
+      <div class="metric blue" id="tr-step">0</div>
+      <div class="metric-sub" id="tr-phase">Phase: —</div>
+    </div>
+    <div class="card">
+      <h3>Banked Examples</h3>
+      <div class="metric green" id="tr-bank">0</div>
+      <div class="metric-sub" id="tr-toss">Tossed: 0</div>
+    </div>
+    <div class="card">
+      <h3>State</h3>
+      <div id="tr-state-badge"><span class="badge b-gray">Idle</span></div>
+      <div class="metric-sub" id="tr-examples" style="margin-top:8px">Examples: 0</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Loss Over Time</h3>
+    <div class="chart-box tall"><canvas id="tr-loss-chart"></canvas></div>
+  </div>
+</div>
 
-      <!-- Step 3 -->
-      <div style="border-left:3px solid #a855f7;padding-left:16px">
-        <div style="color:#a855f7;font-weight:700;margin-bottom:6px">
-          STEP 3 — Export to training files
-        </div>
-        <div style="color:#e2e8f0;margin-bottom:8px">
-          Once all phases complete, export the banked Q&amp;A pairs to JSONL files:
-        </div>
-        <pre style="background:#0f1117;padding:12px;border-radius:6px;
-             color:#a855f7;font-size:12px;overflow-x:auto">python -m logiik.utils.export_dataset --output_dir ./training_data</pre>
-        <div style="color:#8892a4;margin-top:6px">
-          This creates one file per phase + a combined <code style="background:#0f1117;
-          padding:2px 5px;border-radius:3px">all_phases.jsonl</code>.
-          Check <code style="background:#0f1117;padding:2px 5px;border-radius:3px">export_summary.json</code>
-          to see how many examples were banked per phase.
-        </div>
-      </div>
+<!-- ── KNOWLEDGE BASE ── -->
+<div class="view" id="v-knowledge">
+  <div class="page-header">
+    <div class="page-title">Knowledge Base</div>
+    <div class="page-sub">Vector store, ingestion stats, and Firebase documents</div>
+  </div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="card">
+      <h3>Total Vectors</h3>
+      <div class="metric blue" id="kb-vectors">—</div>
+      <div class="metric-sub" id="kb-backend">Backend: —</div>
+    </div>
+    <div class="card">
+      <h3>Chunks Ingested</h3>
+      <div class="metric green" id="kb-chunks">—</div>
+      <div class="metric-sub" id="kb-chunks-dup">Duplicates: —</div>
+    </div>
+    <div class="card">
+      <h3>Images Ingested</h3>
+      <div class="metric purple" id="kb-images">—</div>
+      <div class="metric-sub" id="kb-images-dup">Duplicates: —</div>
+    </div>
+    <div class="card">
+      <h3>Firebase Docs</h3>
+      <div class="metric" id="kb-firebase">—</div>
+      <div class="metric-sub" id="kb-checkpoints">Checkpoints: —</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Ingestion Mode</h3>
+    <div id="kb-mode" style="margin-bottom:8px"><span class="badge b-blue">lite_mode</span></div>
+    <div class="metric-sub">Lite: 1–500 PDFs &nbsp;|&nbsp; Full: 500–50,000 PDFs</div>
+  </div>
+</div>
 
-      <!-- Step 4 -->
-      <div style="border-left:3px solid #f97316;padding-left:16px">
-        <div style="color:#f97316;font-weight:700;margin-bottom:6px">
-          STEP 4 — Train on GPU (Phases 1–11)
-        </div>
-        <div style="color:#e2e8f0;margin-bottom:8px">
-          Move your <code style="background:#0f1117;padding:2px 5px;border-radius:3px">training_data/</code>
-          folder to your GPU machine, then run:
-        </div>
-        <pre style="background:#0f1117;padding:12px;border-radius:6px;
-             color:#f97316;font-size:12px;overflow-x:auto">pip install trl transformers datasets accelerate bitsandbytes peft
+<!-- ── GPU ── -->
+<div class="view" id="v-gpu">
+  <div class="page-header">
+    <div class="page-title">GPU</div>
+    <div class="page-sub">VRAM, utilisation and temperature</div>
+  </div>
+  <div class="grid g4" style="margin-bottom:14px">
+    <div class="card">
+      <h3>Device</h3>
+      <div class="metric blue" id="gpu-name" style="font-size:18px">—</div>
+      <div class="metric-sub" id="gpu-avail">—</div>
+    </div>
+    <div class="card">
+      <h3>VRAM Used</h3>
+      <div class="metric" id="gpu-vram">—</div>
+      <div class="bar-track"><div class="bar-fill" id="gpu-vram-bar" style="width:0%;background:var(--red)"></div></div>
+      <div class="metric-sub" id="gpu-vram-total">Total: —</div>
+    </div>
+    <div class="card">
+      <h3>Utilisation</h3>
+      <div class="metric" id="gpu-util">—</div>
+      <div class="metric-sub">%</div>
+    </div>
+    <div class="card">
+      <h3>Temperature</h3>
+      <div class="metric" id="gpu-temp">—</div>
+      <div class="metric-sub">°C</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>VRAM Over Time</h3>
+    <div class="chart-box tall"><canvas id="gpu-chart"></canvas></div>
+  </div>
+</div>
+
+<!-- ── QUERY ── -->
+<div class="view" id="v-query">
+  <div class="page-header">
+    <div class="page-title">Query Knowledge Base</div>
+    <div class="page-sub">Search ingested scientific documents by semantic similarity</div>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <textarea class="qbox" id="q-input" placeholder="Ask a scientific question..."></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+      <button class="btn btn-primary" onclick="runQuery()">Search</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('q-input').value='';document.getElementById('q-results').innerHTML=''">Clear</button>
+      <label style="color:var(--muted);font-size:11px;margin-left:auto">Top-K
+        <input id="q-topk" type="number" value="5" min="1" max="20" style="width:44px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 6px;margin-left:6px">
+      </label>
+    </div>
+  </div>
+  <div id="q-results"></div>
+</div>
+
+<!-- ── LOGS ── -->
+<div class="view" id="v-logs">
+  <div class="page-header" style="display:flex;align-items:center;gap:10px">
+    <div><div class="page-title">Logs</div><div class="page-sub">System event stream</div></div>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="addLog('info','Manual refresh.')">Refresh</button>
+      <button class="btn btn-ghost" onclick="_logs.length=0;renderLogs()">Clear</button>
+    </div>
+  </div>
+  <div id="log-box"><div class="log-line"><span class="log-ts">[--:--:--]</span> <span class="log-info">INFO</span> LOGIIK dashboard initialised.</div></div>
+</div>
+
+</div><!-- #main -->
+
+<!-- ═══════════════════════════════════════════════════════ HOW-TO MODAL -->
+<div id="modal-bg" onclick="if(event.target===this)closeModal()">
+ <div id="modal-box">
+  <div class="modal-head">
+   <h2>How To Build Your Training Dataset</h2>
+   <button class="modal-close" onclick="closeModal()">✕</button>
+  </div>
+  <div class="step" style="border-color:var(--blue)">
+   <div class="step-title" style="color:var(--blue)">STEP 1 — Switch to local mode (no accounts needed)</div>
+   <p>Open <code>logiik/config/config.yaml</code> and change one line:</p>
+   <pre>backend: "faiss"   # was "pinecone" — stores vectors locally</pre>
+   <p>You don't need Pinecone or Firebase yet. FAISS saves everything to disk for free.</p>
+  </div>
+  <div class="step" style="border-color:var(--green)">
+   <div class="step-title" style="color:var(--green)">STEP 2 — Run generation (CPU, no GPU needed)</div>
+   <pre>python -m logiik.main</pre>
+   <p>Watch this dashboard. Each phase finishes when Coverage hits 95% and Saturation hits 90%. All 12 phases must complete before exporting.</p>
+  </div>
+  <div class="step" style="border-color:var(--purple)">
+   <div class="step-title" style="color:var(--purple)">STEP 3 — Export to training files</div>
+   <pre>python -m logiik.utils.export_dataset --output_dir ./training_data</pre>
+   <p>Creates one JSONL file per phase + <code>all_phases.jsonl</code>. Check <code>export_summary.json</code> to verify example counts.</p>
+  </div>
+  <div class="step" style="border-color:var(--orange)">
+   <div class="step-title" style="color:var(--orange)">STEP 4 — GPU training: Phases 1–11 (SFT)</div>
+   <pre>pip install trl transformers datasets accelerate bitsandbytes peft
 
 python -m logiik.core.sft_trainer \
   --data_dir   ./training_data \
   --model_name mistralai/Mistral-7B-v0.1 \
   --output_dir ./checkpoints</pre>
-        <div style="color:#8892a4;margin-top:6px">
-          Uses LoRA (QLoRA 4-bit) by default — works on a single consumer GPU
-          (24GB VRAM or more recommended). Swap model name for any HuggingFace
-          causal model.
-        </div>
-      </div>
-
-      <!-- Step 5 -->
-      <div style="border-left:3px solid #ef4444;padding-left:16px">
-        <div style="color:#ef4444;font-weight:700;margin-bottom:6px">
-          STEP 5 — Phase 12 RL training (PPO)
-        </div>
-        <div style="color:#e2e8f0;margin-bottom:8px">
-          After SFT, run Phase 12 PPO fine-tuning on the checkpoint:
-        </div>
-        <pre style="background:#0f1117;padding:12px;border-radius:6px;
-             color:#ef4444;font-size:12px;overflow-x:auto">python -m logiik.core.sft_trainer \
+   <p>Uses QLoRA 4-bit by default — works on a single 24GB GPU. Swap the model name for any HuggingFace causal LM.</p>
+  </div>
+  <div class="step" style="border-color:var(--red)">
+   <div class="step-title" style="color:var(--red)">STEP 5 — Phase 12 RL fine-tuning (PPO)</div>
+   <pre>python -m logiik.core.sft_trainer \
   --data_dir   ./training_data \
   --model_name ./checkpoints/final \
   --output_dir ./checkpoints_phase12 \
-  --phases 12 \
-  --no_4bit</pre>
-        <div style="color:#8892a4;margin-top:6px">
-          Phase 12 uses the PPO/TRL backend (already wired). This refines the
-          model's judgment and calibration on top of the SFT base.
-        </div>
-      </div>
-
-      <!-- Summary -->
-      <div style="background:#0f1117;border-radius:8px;padding:16px;
-           border:1px solid #2a2d3a">
-        <div style="font-weight:700;margin-bottom:10px;color:#eab308">
-          What you need
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;
-             color:#8892a4;font-size:12px">
-          <div><span style="color:#22c55e">✓</span> Generation: any CPU machine</div>
-          <div><span style="color:#22c55e">✓</span> FAISS: built in, no setup</div>
-          <div><span style="color:#22c55e">✓</span> Firebase: optional, skip for now</div>
-          <div><span style="color:#22c55e">✓</span> Pinecone: optional, skip for now</div>
-          <div><span style="color:#eab308">→</span> Training: GPU (24GB+ VRAM)</div>
-          <div><span style="color:#eab308">→</span> Model: any HuggingFace causal LM</div>
-        </div>
-      </div>
-
-    </div>
+  --phases 12 --no_4bit</pre>
+   <p>Refines judgment and calibration on top of the SFT base using PPO/TRL. Run this after Step 4 completes.</p>
   </div>
+  <div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:4px">
+   <div style="font-weight:700;font-size:12px;color:var(--yellow);margin-bottom:10px">What you need right now</div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11.5px;color:var(--dim)">
+    <div><span style="color:var(--green)">✓</span> Generation — any CPU machine</div>
+    <div><span style="color:var(--green)">✓</span> FAISS — built in, zero setup</div>
+    <div><span style="color:var(--green)">✓</span> Firebase — optional, skip for now</div>
+    <div><span style="color:var(--green)">✓</span> Pinecone — optional, skip for now</div>
+    <div><span style="color:var(--yellow)">→</span> Training — GPU (24 GB+ VRAM)</div>
+    <div><span style="color:var(--yellow)">→</span> Model — any HuggingFace causal LM</div>
+   </div>
+  </div>
+ </div>
 </div>
 
-<nav>
-  <button class="active" onclick="showTab('phase', this)">Phase Monitor</button>
-  <button onclick="showTab('curriculum', this)">Curriculum</button>
-  <button onclick="showTab('training', this)">Training</button>
-  <button onclick="showTab('knowledge', this)">Knowledge Base</button>
-  <button onclick="showTab('gpu', this)">GPU</button>
-  <button onclick="showTab('query', this)">Query</button>
-  <button onclick="showTab('logs', this)">Logs</button>
-</nav>
-
-<!-- TAB 1: Phase Monitor -->
-<div id="tab-phase" class="tab-content active">
-  <div class="grid grid-4" style="margin-bottom:16px">
-    <div class="card">
-      <h3>Current Phase</h3>
-      <div class="metric blue" id="phase-name">—</div>
-      <div class="sub" id="phase-id">Phase —</div>
-    </div>
-    <div class="card">
-      <h3>Coverage Ratio</h3>
-      <div class="metric" id="coverage-metric">—</div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="coverage-bar"
-             style="width:0%;background:#3b82f6"></div>
-      </div>
-      <div class="sub">Target: 95%</div>
-    </div>
-    <div class="card">
-      <h3>Saturation Score</h3>
-      <div class="metric" id="saturation-metric">—</div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="saturation-bar"
-             style="width:0%;background:#a855f7"></div>
-      </div>
-      <div class="sub">Target: 90%</div>
-    </div>
-    <div class="card">
-      <h3>Status</h3>
-      <div id="phase-status-badge">
-        <span class="badge badge-yellow">In Progress</span>
-      </div>
-      <div class="sub" id="phase-iter">Iteration: 0</div>
-    </div>
-  </div>
-  <div class="grid grid-2">
-    <div class="card">
-      <h3>Coverage Over Time</h3>
-      <div class="chart-wrap">
-        <canvas id="coverage-chart"></canvas>
-      </div>
-    </div>
-    <div class="card">
-      <h3>Saturation Over Time</h3>
-      <div class="chart-wrap">
-        <canvas id="saturation-chart"></canvas>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- TAB 2: Curriculum -->
-<div id="tab-curriculum" class="tab-content">
-  <div class="card" style="margin-bottom:16px">
-    <h3 style="margin-bottom:4px">12-Phase Curriculum</h3>
-    <div id="curriculum-meta" style="color:var(--text-muted);font-size:12px">
-      Loading…
-    </div>
-  </div>
-  <div id="curriculum-tracks"></div>
-</div>
-
-<!-- TAB 3: Training -->
-<div id="tab-training" class="tab-content">
-  <div class="grid grid-4" style="margin-bottom:16px">
-    <div class="card">
-      <h3>Training Loss</h3>
-      <div class="metric" id="loss-metric">—</div>
-      <div class="sub" id="val-loss-sub">Val loss: —</div>
-    </div>
-    <div class="card">
-      <h3>Step</h3>
-      <div class="metric blue" id="step-metric">0</div>
-      <div class="sub" id="phase-train-name">Phase: —</div>
-    </div>
-    <div class="card">
-      <h3>Questions Banked</h3>
-      <div class="metric green" id="bank-count">0</div>
-      <div class="sub" id="toss-count">Tossed: 0</div>
-    </div>
-    <div class="card">
-      <h3>Training State</h3>
-      <div id="training-state-badge">
-        <span class="badge badge-yellow">Idle</span>
-      </div>
-      <div class="sub" id="examples-processed">Examples: 0</div>
-    </div>
-  </div>
-  <div class="card">
-    <h3>Loss Over Time</h3>
-    <div class="chart-wrap" style="height:240px">
-      <canvas id="loss-chart"></canvas>
-    </div>
-  </div>
-</div>
-
-<!-- TAB 3: Knowledge Base -->
-<div id="tab-knowledge" class="tab-content">
-  <div class="grid grid-4" style="margin-bottom:16px">
-    <div class="card">
-      <h3>Total Vectors</h3>
-      <div class="metric blue" id="vector-count">—</div>
-      <div class="sub" id="vector-backend">Backend: —</div>
-    </div>
-    <div class="card">
-      <h3>Chunks Ingested</h3>
-      <div class="metric green" id="chunks-new">—</div>
-      <div class="sub" id="chunks-dup">Duplicates: —</div>
-    </div>
-    <div class="card">
-      <h3>Images Ingested</h3>
-      <div class="metric" id="images-new"
-           style="color:var(--purple)">—</div>
-      <div class="sub" id="images-dup">Duplicates: —</div>
-    </div>
-    <div class="card">
-      <h3>Firebase Docs</h3>
-      <div class="metric" id="firebase-docs">—</div>
-      <div class="sub" id="firebase-checkpoints">Checkpoints: —</div>
-    </div>
-  </div>
-  <div class="card">
-    <h3>Ingestion Mode</h3>
-    <div id="ingestion-mode-badge" style="margin-bottom:8px">
-      <span class="badge badge-blue">lite_mode</span>
-    </div>
-    <div class="sub">
-      Lite Mode: 1–500 PDFs &nbsp;|&nbsp;
-      Full Mode: 500–50,000 PDFs
-    </div>
-  </div>
-</div>
-
-<!-- TAB 4: GPU -->
-<div id="tab-gpu" class="tab-content">
-  <div class="grid grid-4" style="margin-bottom:16px">
-    <div class="card">
-      <h3>Device</h3>
-      <div class="metric blue" id="gpu-name"
-           style="font-size:16px">CPU</div>
-      <div class="sub" id="gpu-available">No GPU detected</div>
-    </div>
-    <div class="card">
-      <h3>VRAM Used</h3>
-      <div class="metric" id="vram-used">—</div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="vram-bar"
-             style="width:0%;background:#ef4444"></div>
-      </div>
-      <div class="sub" id="vram-total">Total: — GB</div>
-    </div>
-    <div class="card">
-      <h3>GPU Utilisation</h3>
-      <div class="metric" id="gpu-util">—</div>
-      <div class="sub">%</div>
-    </div>
-    <div class="card">
-      <h3>Temperature</h3>
-      <div class="metric" id="gpu-temp">—</div>
-      <div class="sub">°C</div>
-    </div>
-  </div>
-  <div class="card">
-    <h3>VRAM Usage Over Time</h3>
-    <div class="chart-wrap" style="height:240px">
-      <canvas id="vram-chart"></canvas>
-    </div>
-  </div>
-</div>
-
-<!-- TAB 5: Query -->
-<div id="tab-query" class="tab-content">
-  <div class="card" style="margin-bottom:16px">
-    <h3>Query Knowledge Base</h3>
-    <textarea class="query-box" id="query-input"
-      placeholder="Enter a scientific question..."></textarea>
-    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-      <button class="btn btn-primary" onclick="runQuery()">
-        Search
-      </button>
-      <label style="color:var(--text-muted);font-size:12px">
-        Top-K:
-        <input type="number" id="top-k" value="5" min="1" max="20"
-          style="width:48px;background:var(--bg);border:1px solid
-          var(--border);color:var(--text);border-radius:4px;
-          padding:2px 4px;margin-left:4px"/>
-      </label>
-      <label style="color:var(--text-muted);font-size:12px">
-        Phase filter:
-        <select id="phase-filter"
-          style="background:var(--bg);border:1px solid var(--border);
-          color:var(--text);border-radius:4px;padding:2px 4px;
-          margin-left:4px">
-          <option value="">All</option>
-          <option value="phase7">Phase 7</option>
-          <option value="phase8">Phase 8</option>
-          <option value="phase9">Phase 9</option>
-        </select>
-      </label>
-    </div>
-  </div>
-  <div id="query-results"></div>
-  <div id="query-context-card" style="display:none;margin-top:16px"
-       class="card">
-    <h3>Assembled Context</h3>
-    <pre id="query-context"
-         style="white-space:pre-wrap;font-size:12px;
-         color:var(--text-muted);margin-top:8px"></pre>
-  </div>
-</div>
-
-<!-- TAB 6: Logs -->
-<div id="tab-logs" class="tab-content">
-  <div style="display:flex;gap:8px;margin-bottom:12px">
-    <button class="btn btn-primary" onclick="refreshLogs()">
-      Refresh
-    </button>
-    <button class="btn" style="background:var(--surface)"
-            onclick="clearLogs()">
-      Clear
-    </button>
-  </div>
-  <div id="log-container">
-    <div class="log-entry">
-      <span class="ts">[--:--:--]</span>
-      <span class="level-info"> INFO </span>
-      Logiik dashboard initialised.
-    </div>
-  </div>
-</div>
-
+<!-- ═══════════════════════════════════════════════════════ JAVASCRIPT -->
 <script>
-const API = 'http://localhost:8001';
-const REFRESH_MS = 2000;
+const API='http://localhost:8001', POLL=2000;
+const TRACK_COLOR={foundation:'#4f8ef7',language:'#22c55e',domain:'#a855f7',execution:'#f97316',integration:'#eab308',capstone:'#ef4444'};
 
-// ── Tab navigation ──────────────────────────────────────────────────────────
-function showTab(name, btn) {
-  document.querySelectorAll('.tab-content').forEach(t =>
-    t.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(b =>
-    b.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  btn.classList.add('active');
+// ── Navigation ──────────────────────────────────────────────────────────────
+function nav(id,el){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('v-'+id).classList.add('active');
+  el.classList.add('active');
 }
 
-// ── Chart helpers ────────────────────────────────────────────────────────────
-function makeLineChart(id, label, color) {
-  const ctx = document.getElementById(id).getContext('2d');
-  return new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label,
-        data: [],
-        borderColor: color,
-        backgroundColor: color + '22',
-        borderWidth: 2,
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { display: false },
-        y: {
-          min: 0, max: 1,
-          grid: { color: '#2a2d3a' },
-          ticks: { color: '#8892a4' }
-        }
-      }
-    }
+// ── Modal ───────────────────────────────────────────────────────────────────
+function openModal(){document.getElementById('modal-bg').style.display='block';document.body.style.overflow='hidden'}
+function closeModal(){document.getElementById('modal-bg').style.display='none';document.body.style.overflow=''}
+
+// ── Chart factory ────────────────────────────────────────────────────────────
+function mkLine(id,label,color,yMin=0,yMax=1){
+  return new Chart(document.getElementById(id).getContext('2d'),{
+    type:'line',
+    data:{labels:[],datasets:[{label,data:[],borderColor:color,backgroundColor:color+'18',borderWidth:2,fill:true,tension:0.35,pointRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false}},
+      scales:{x:{display:false},y:{min:yMin,max:yMax,grid:{color:'#1e2840'},ticks:{color:'#5a6a8a',font:{size:10}}}}}
   });
 }
-
-function makeValueChart(id, label, color, yMin, yMax) {
-  const ctx = document.getElementById(id).getContext('2d');
-  return new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label,
-        data: [],
-        borderColor: color,
-        backgroundColor: color + '22',
-        borderWidth: 2,
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { display: false },
-        y: {
-          min: yMin,
-          max: yMax,
-          grid: { color: '#2a2d3a' },
-          ticks: { color: '#8892a4' }
-        }
-      }
-    }
-  });
-}
-
-function pushData(chart, value, maxPoints = 60) {
-  const ts = new Date().toLocaleTimeString();
-  chart.data.labels.push(ts);
-  chart.data.datasets[0].data.push(value);
-  if (chart.data.labels.length > maxPoints) {
-    chart.data.labels.shift();
-    chart.data.datasets[0].data.shift();
-  }
+function push(chart,v,max=60){
+  chart.data.labels.push(new Date().toLocaleTimeString());
+  chart.data.datasets[0].data.push(v);
+  if(chart.data.labels.length>max){chart.data.labels.shift();chart.data.datasets[0].data.shift();}
   chart.update('none');
 }
 
-// ── Initialise charts ────────────────────────────────────────────────────────
-const coverageChart = makeLineChart(
-  'coverage-chart', 'Coverage', '#3b82f6');
-const saturationChart = makeLineChart(
-  'saturation-chart', 'Saturation', '#a855f7');
-const lossChart = makeValueChart(
-  'loss-chart', 'Loss', '#ef4444', 0, null);
-const vramChart = makeValueChart(
-  'vram-chart', 'VRAM GB', '#eab308', 0, null);
+// ── Charts init ──────────────────────────────────────────────────────────────
+const C={
+  ovCov:  mkLine('ov-cov-chart','Coverage','#4f8ef7'),
+  ovLoss: mkLine('ov-loss-chart','Loss','#ef4444',0,5),
+  phCov:  mkLine('ph-cov-chart','Coverage','#4f8ef7'),
+  trLoss: mkLine('tr-loss-chart','Loss','#ef4444',0,5),
+  gpuV:   mkLine('gpu-chart','VRAM GB','#eab308',0,null),
+};
 
-// ── Colour helpers ───────────────────────────────────────────────────────────
-function ratioColor(v) {
-  if (v >= 0.90) return 'green';
-  if (v >= 0.70) return 'yellow';
-  return 'red';
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const pct=v=>(v*100).toFixed(1)+'%';
+function rColor(v){return v>=0.90?'green':v>=0.70?'yellow':'red'}
+async function api(path){const r=await fetch(API+path);if(!r.ok)throw Error(r.status);return r.json();}
+
+// ── Phase strip ───────────────────────────────────────────────────────────────
+let _curriculum=null, _currentPhase=0;
+
+function buildStrip(){
+  const strip=document.getElementById('phase-strip');
+  strip.innerHTML='';
+  const tracks=['foundation','language','domain','execution','integration','capstone'];
+  const order=[1,2,3,4,5,6,7,8,9,10,11,12];
+  if(!_curriculum){
+    order.forEach(i=>{
+      const d=document.createElement('div');
+      d.className='ps-seg';d.id='ps-'+i;strip.appendChild(d);
+    });return;
+  }
+  order.forEach(pid=>{
+    const d=document.createElement('div');
+    d.className='ps-seg';d.id='ps-'+pid;
+    const info=_getTrack(pid);
+    if(info)d.style.background=info.color+'44';
+    strip.appendChild(d);
+  });
 }
 
-function pct(v) { return (v * 100).toFixed(1) + '%'; }
-
-// ── API fetch helpers ────────────────────────────────────────────────────────
-async function fetchJSON(path) {
-  const r = await fetch(API + path);
-  if (!r.ok) throw new Error(r.status);
-  return r.json();
-}
-
-// ── Health check ─────────────────────────────────────────────────────────────
-async function checkHealth() {
-  try {
-    await fetchJSON('/logiik/health');
-    document.getElementById('api-dot').className = 'status-dot green';
-    document.getElementById('api-status').textContent = 'Connected';
-  } catch {
-    document.getElementById('api-dot').className = 'status-dot red';
-    document.getElementById('api-status').textContent = 'API offline';
+function updateStrip(){
+  for(let i=1;i<=12;i++){
+    const seg=document.getElementById('ps-'+i);
+    if(!seg)continue;
+    const info=_getTrack(i);
+    const color=info?info.color:'#4f8ef7';
+    if(i<_currentPhase){seg.style.background=color;seg.style.opacity='0.5';}
+    else if(i===_currentPhase){seg.style.background=color;seg.style.boxShadow='0 0 10px '+color+'88';}
+    else{seg.style.background=info?color+'22':'#1a2235';seg.style.boxShadow='none';}
   }
 }
 
-// ── Phase metrics ────────────────────────────────────────────────────────────
-async function refreshPhase() {
-  try {
-    const d = await fetchJSON('/logiik/phase_metrics');
-    document.getElementById('phase-name').textContent =
-      d.phase || '—';
-    const trackInfo = _getPhaseTrack(d.phase_id);
-    const trackLabel = trackInfo
-      ? ` · <span style="color:${trackInfo.color}">${trackInfo.track}</span>`
-      : '';
-    document.getElementById('phase-id').innerHTML =
-      'Phase ' + (d.phase_id || '—') + trackLabel;
-    document.getElementById('phase-iter').textContent =
-      'Iteration: ' + (d.iteration || 0);
+function _getTrack(pid){
+  if(!_curriculum)return null;
+  for(const[track,data] of Object.entries(_curriculum.tracks||{})){
+    if((data.phases||[]).some(p=>p.id===pid))return{track,color:data.color||TRACK_COLOR[track]||'#4f8ef7'};
+  }return null;
+}
 
-    const cov = d.coverage_ratio || 0;
-    const sat = d.saturation_score || 0;
-
-    document.getElementById('coverage-metric').textContent = pct(cov);
-    document.getElementById('coverage-metric').className =
-      'metric ' + ratioColor(cov);
-    document.getElementById('coverage-bar').style.width =
-      (cov * 100) + '%';
-
-    document.getElementById('saturation-metric').textContent = pct(sat);
-    document.getElementById('saturation-metric').className =
-      'metric ' + ratioColor(sat);
-    document.getElementById('saturation-bar').style.width =
-      (sat * 100) + '%';
-
-    const badge = document.getElementById('phase-status-badge');
-    if (d.is_complete) {
-      badge.innerHTML =
-        '<span class="badge badge-green">Complete</span>';
-    } else if (cov > 0) {
-      badge.innerHTML =
-        '<span class="badge badge-yellow">In Progress</span>';
-    } else {
-      badge.innerHTML =
-        '<span class="badge badge-red">Not Started</span>';
+// ── All-phases list ───────────────────────────────────────────────────────────
+function renderPhaseList(){
+  const el=document.getElementById('all-phases-list');
+  if(!_curriculum){el.innerHTML='<div style="color:var(--muted);font-size:12px">Loading...</div>';return;}
+  let html='';
+  for(let pid=1;pid<=12;pid++){
+    const info=_getTrack(pid);
+    const color=info?info.color:'#4f8ef7';
+    const trackName=info?info.track:'—';
+    let phaseName='Phase '+pid;
+    if(_curriculum.tracks){
+      for(const data of Object.values(_curriculum.tracks)){
+        const p=(data.phases||[]).find(p=>p.id===pid);
+        if(p){phaseName=p.display_name||p.name;break;}
+      }
     }
-
-    pushData(coverageChart, cov);
-    pushData(saturationChart, sat);
-  } catch(e) { /* API not yet ready */ }
+    const isCurrent=pid===_currentPhase;
+    const isDone=pid<_currentPhase;
+    html+=`<div class="phase-row${isCurrent?' current':''}${isDone?' done':''}">
+      <div class="ph-num" style="background:${color}22;color:${color}">${pid}</div>
+      <div class="ph-info">
+        <div class="ph-name">${phaseName}</div>
+        <div class="ph-track" style="color:${color}">${trackName}</div>
+      </div>
+      <div class="ph-status">${isDone?'<span class="badge b-green">Done</span>':isCurrent?'<span class="badge b-blue">Active</span>':'<span class="badge b-gray">Queued</span>'}</div>
+    </div>`;
+  }
+  el.innerHTML=html;
 }
 
-// ── Training metrics ─────────────────────────────────────────────────────────
-async function refreshTraining() {
-  try {
-    const d = await fetchJSON('/logiik/training_metrics');
-    const loss = d.loss;
-    document.getElementById('loss-metric').textContent =
-      loss != null ? loss.toFixed(4) : '—';
-    document.getElementById('loss-metric').className =
-      'metric ' + (loss != null ?
-        (loss < 1 ? 'green' : loss < 3 ? 'yellow' : 'red') : '');
-    document.getElementById('val-loss-sub').textContent =
-      'Val loss: ' + (d.val_loss != null ?
-        d.val_loss.toFixed(4) : '—');
-    document.getElementById('step-metric').textContent =
-      d.step || 0;
-    document.getElementById('phase-train-name').textContent =
-      'Phase: ' + (d.current_phase || '—');
-    document.getElementById('bank-count').textContent =
-      d.bank_count || 0;
-    document.getElementById('toss-count').textContent =
-      'Tossed: ' + (d.toss_count || 0);
-    document.getElementById('examples-processed').textContent =
-      'Examples: ' + (d.examples_processed || 0);
-
-    const sb = document.getElementById('training-state-badge');
-    if (d.training_complete) {
-      sb.innerHTML =
-        '<span class="badge badge-green">Complete</span>';
-    } else if (d.training_active) {
-      sb.innerHTML =
-        '<span class="badge badge-blue">Training</span>';
-    } else {
-      sb.innerHTML =
-        '<span class="badge badge-yellow">Idle</span>';
-    }
-
-    if (loss != null) pushData(lossChart, loss);
-  } catch(e) {}
+// ── Curriculum view ───────────────────────────────────────────────────────────
+function renderCurriculum(){
+  if(!_curriculum)return;
+  const tracks=['foundation','language','domain','execution','integration','capstone'];
+  document.getElementById('curr-meta').textContent=
+    `${_curriculum.total_phases||12} phases · 6 tracks · updated ${new Date().toLocaleTimeString()}`;
+  let html='';
+  tracks.forEach(track=>{
+    const td=_curriculum.tracks[track];if(!td)return;
+    const color=td.color||TRACK_COLOR[track]||'#4f8ef7';
+    const phases=td.phases||[];
+    const cards=phases.map(p=>`
+      <div class="phase-card" style="border-left-color:${color}">
+        <div class="pc-id" style="background:${color}22;color:${color}">Phase ${p.id}</div>
+        ${p.teacher_student?`<span class="badge b-yellow" style="margin-left:6px;font-size:9px">T-S</span>`:''}
+        <div class="pc-name">${p.display_name||p.name}</div>
+        <div class="pc-meta">
+          <span>Gen ${p.generative_ratio!=null?(p.generative_ratio*100).toFixed(0)+'%':'—'}</span>
+          <span>Threshold ${p.correctness_threshold!=null?(p.correctness_threshold*100).toFixed(0)+'%':'—'}</span>
+        </div>
+      </div>`).join('');
+    html+=`<div class="track-section">
+      <div class="track-label">
+        <div class="track-dot" style="background:${color}"></div>
+        <span class="track-name" style="color:${color}">${track}</span>
+        <span class="track-count">(${phases.length} phase${phases.length!==1?'s':''})</span>
+      </div>
+      <div class="phase-cards">${cards}</div>
+    </div>`;
+  });
+  document.getElementById('curr-tracks').innerHTML=html;
 }
 
-// ── Knowledge base ───────────────────────────────────────────────────────────
-async function refreshKnowledge() {
-  try {
-    const d = await fetchJSON('/logiik/knowledge_stats');
-    const vdb = d.vector_db || {};
-    const fb = d.firebase || {};
-    const ing = d.ingestion || {};
-
-    document.getElementById('vector-count').textContent =
-      vdb.total_vector_count ?? '—';
-    document.getElementById('vector-backend').textContent =
-      'Backend: ' + (vdb.backend || 'pinecone');
-    document.getElementById('chunks-new').textContent =
-      ing.chunks_new ?? '—';
-    document.getElementById('chunks-dup').textContent =
-      'Duplicates: ' + (ing.chunks_duplicate ?? '—');
-    document.getElementById('images-new').textContent =
-      ing.images_new ?? '—';
-    document.getElementById('images-dup').textContent =
-      'Duplicates: ' + (ing.images_duplicate ?? '—');
-    document.getElementById('firebase-docs').textContent =
-      (fb.checkpoints_count ?? 0) +
-      (fb.sessions_count ?? 0) +
-      (fb.embeddings_count ?? 0);
-    document.getElementById('firebase-checkpoints').textContent =
-      'Checkpoints: ' + (fb.checkpoints_count ?? 0);
-
-    const mode = ing.mode || 'lite_mode';
-    document.getElementById('ingestion-mode-badge').innerHTML =
-      '<span class="badge badge-blue">' + mode + '</span>';
-  } catch(e) {}
+// ── API pollers ───────────────────────────────────────────────────────────────
+async function pollHealth(){
+  try{await api('/logiik/health');
+    document.getElementById('api-dot').className='dot on';
+    document.getElementById('api-label').textContent='Connected';
+  }catch{
+    document.getElementById('api-dot').className='dot off';
+    document.getElementById('api-label').textContent='API offline';
+  }
 }
 
-// ── GPU ──────────────────────────────────────────────────────────────────────
-async function refreshGPU() {
-  try {
-    const d = await fetchJSON('/logiik/gpu_status');
-    document.getElementById('gpu-name').textContent =
-      d.device_name || 'CPU';
-    document.getElementById('gpu-available').textContent =
-      d.gpu_available ? 'GPU Active' : 'CPU Mode';
+async function pollPhase(){
+  try{
+    const d=await api('/logiik/phase_metrics');
+    _currentPhase=d.phase_id||0;
+    const cov=d.coverage_ratio||0,sat=d.saturation_score||0;
+    const cn=rColor(cov),sn=rColor(sat);
+    // Overview
+    document.getElementById('ov-phase-num').textContent='Phase '+(d.phase_id||'—');
+    document.getElementById('ov-phase-name').textContent=d.phase||'—';
+    document.getElementById('ov-coverage').textContent=pct(cov);
+    document.getElementById('ov-coverage').className='metric '+cn;
+    document.getElementById('ov-cov-bar').style.width=(cov*100)+'%';
+    document.getElementById('ov-saturation').textContent=pct(sat);
+    document.getElementById('ov-saturation').className='metric '+sn;
+    document.getElementById('ov-sat-bar').style.width=(sat*100)+'%';
+    // Phase monitor
+    document.getElementById('ph-num').textContent='Phase '+(d.phase_id||'—');
+    document.getElementById('ph-name-full').textContent=d.phase||'—';
+    document.getElementById('ph-cov').textContent=pct(cov);
+    document.getElementById('ph-cov').className='metric '+cn;
+    document.getElementById('ph-cov-bar').style.width=(cov*100)+'%';
+    document.getElementById('ph-sat').textContent=pct(sat);
+    document.getElementById('ph-sat').className='metric '+sn;
+    document.getElementById('ph-sat-bar').style.width=(sat*100)+'%';
+    document.getElementById('ph-iter').textContent='Iteration: '+(d.iteration||0);
+    const info=_getTrack(_currentPhase);
+    if(info)document.getElementById('ph-track-badge').innerHTML=
+      `<span class="badge" style="background:${info.color}22;color:${info.color};text-transform:capitalize">${info.track}</span>`;
+    const sb=document.getElementById('ph-status-badge');
+    if(d.is_complete)sb.innerHTML='<span class="badge b-green">Complete</span>';
+    else if(cov>0)sb.innerHTML='<span class="badge b-blue">In Progress</span>';
+    else sb.innerHTML='<span class="badge b-gray">Waiting</span>';
+    push(C.ovCov,cov);push(C.phCov,cov);
+    updateStrip();renderPhaseList();
+  }catch{}
+}
 
-    const used = d.vram_used_gb || 0;
-    const total = d.vram_total_gb || 0;
-    document.getElementById('vram-used').textContent =
-      used.toFixed(1) + ' GB';
-    document.getElementById('vram-total').textContent =
-      'Total: ' + total.toFixed(1) + ' GB';
+async function pollTraining(){
+  try{
+    const d=await api('/logiik/training_metrics');
+    const loss=d.loss;
+    const lstr=loss!=null?loss.toFixed(4):'—';
+    const lc=loss!=null?(loss<1?'green':loss<3?'yellow':'red'):'';
+    document.getElementById('ov-loss').textContent=lstr;
+    document.getElementById('ov-loss').className='metric '+lc;
+    document.getElementById('ov-step').textContent='Step '+(d.step||0);
+    document.getElementById('tr-loss').textContent=lstr;
+    document.getElementById('tr-loss').className='metric '+lc;
+    document.getElementById('tr-valloss').textContent='Val: '+(d.val_loss!=null?d.val_loss.toFixed(4):'—');
+    document.getElementById('tr-step').textContent=d.step||0;
+    document.getElementById('tr-phase').textContent='Phase: '+(d.current_phase||'—');
+    document.getElementById('tr-bank').textContent=d.bank_count||0;
+    document.getElementById('tr-toss').textContent='Tossed: '+(d.toss_count||0);
+    document.getElementById('tr-examples').textContent='Examples: '+(d.examples_processed||0);
+    const sb=document.getElementById('tr-state-badge');
+    if(d.training_complete)sb.innerHTML='<span class="badge b-green">Complete</span>';
+    else if(d.training_active)sb.innerHTML='<span class="badge b-blue">Training</span>';
+    else sb.innerHTML='<span class="badge b-gray">Idle</span>';
+    if(loss!=null){push(C.ovLoss,loss);push(C.trLoss,loss);}
+  }catch{}
+}
 
-    const usedPct = total > 0 ? (used / total) * 100 : 0;
-    document.getElementById('vram-bar').style.width = usedPct + '%';
-    document.getElementById('vram-bar').style.background =
-      usedPct > 85 ? '#ef4444' :
-      usedPct > 60 ? '#eab308' : '#22c55e';
+async function pollKnowledge(){
+  try{
+    const d=await api('/logiik/knowledge_stats');
+    const vdb=d.vector_db||{},fb=d.firebase||{},ing=d.ingestion||{};
+    document.getElementById('kb-vectors').textContent=vdb.total_vector_count??'—';
+    document.getElementById('kb-backend').textContent='Backend: '+(vdb.backend||'faiss');
+    document.getElementById('kb-chunks').textContent=ing.chunks_new??'—';
+    document.getElementById('kb-chunks-dup').textContent='Duplicates: '+(ing.chunks_duplicate??'—');
+    document.getElementById('kb-images').textContent=ing.images_new??'—';
+    document.getElementById('kb-images-dup').textContent='Duplicates: '+(ing.images_duplicate??'—');
+    document.getElementById('kb-firebase').textContent=(fb.checkpoints_count??0)+(fb.sessions_count??0)+(fb.embeddings_count??0);
+    document.getElementById('kb-checkpoints').textContent='Checkpoints: '+(fb.checkpoints_count??0);
+    const mode=ing.mode||'lite_mode';
+    document.getElementById('kb-mode').innerHTML=`<span class="badge b-blue">${mode}</span>`;
+  }catch{}
+}
 
-    document.getElementById('gpu-util').textContent =
-      d.utilisation_pct != null ?
-        d.utilisation_pct.toFixed(0) + '%' : '—';
-    document.getElementById('gpu-util').className =
-      'metric ' + (d.utilisation_pct > 90 ? 'red' :
-                   d.utilisation_pct > 60 ? 'yellow' : 'green');
+async function pollGPU(){
+  try{
+    const d=await api('/logiik/gpu_status');
+    document.getElementById('gpu-name').textContent=d.device_name||'CPU';
+    document.getElementById('gpu-avail').textContent=d.gpu_available?'GPU Active':'CPU Mode';
+    const used=d.vram_used_gb||0,total=d.vram_total_gb||0;
+    document.getElementById('gpu-vram').textContent=used.toFixed(1)+' GB';
+    document.getElementById('gpu-vram-total').textContent='Total: '+total.toFixed(1)+' GB';
+    const pctV=total>0?(used/total)*100:0;
+    const vbar=document.getElementById('gpu-vram-bar');
+    vbar.style.width=pctV+'%';
+    vbar.style.background=pctV>85?'var(--red)':pctV>60?'var(--yellow)':'var(--green)';
+    const util=d.utilisation_pct;
+    document.getElementById('gpu-util').textContent=util!=null?util.toFixed(0)+'%':'—';
+    document.getElementById('gpu-util').className='metric '+(util>90?'red':util>60?'yellow':'green');
+    const temp=d.temperature_c;
+    document.getElementById('gpu-temp').textContent=temp!=null?temp+'°C':'—';
+    document.getElementById('gpu-temp').className='metric '+(temp>85?'red':temp>70?'yellow':'green');
+    if(total>0)push(C.gpuV,used);
+  }catch{}
+}
 
-    document.getElementById('gpu-temp').textContent =
-      d.temperature_c != null ? d.temperature_c + '°C' : '—';
-    document.getElementById('gpu-temp').className =
-      'metric ' + (d.temperature_c > 85 ? 'red' :
-                   d.temperature_c > 70 ? 'yellow' : 'green');
-
-    if (total > 0) pushData(vramChart, used);
-  } catch(e) {}
+async function pollCurriculum(){
+  try{
+    const d=await api('/logiik/curriculum');
+    _curriculum=d;buildStrip();renderCurriculum();renderPhaseList();
+  }catch{}
 }
 
 // ── Query ────────────────────────────────────────────────────────────────────
-async function runQuery() {
-  const query = document.getElementById('query-input').value.trim();
-  if (!query) return;
-  const topK = parseInt(document.getElementById('top-k').value) || 5;
-  const phaseFilter =
-    document.getElementById('phase-filter').value || null;
-
-  const container = document.getElementById('query-results');
-  container.innerHTML =
-    '<div style="color:var(--text-muted)">Searching...</div>';
-
-  try {
-    const r = await fetch(API + '/logiik/query', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query, top_k: topK,
-        phase_filter: phaseFilter,
-        min_score: 0.0
-      })
-    });
-    const d = await r.json();
-
-    if (!d.results || d.results.length === 0) {
-      container.innerHTML =
-        '<div style="color:var(--text-muted)">No results found.</div>';
-      return;
-    }
-
-    container.innerHTML = d.results.map(res => `
+async function runQuery(){
+  const q=document.getElementById('q-input').value.trim();
+  if(!q)return;
+  const topK=parseInt(document.getElementById('q-topk').value)||5;
+  const res=document.getElementById('q-results');
+  res.innerHTML='<div style="color:var(--muted);padding:12px">Searching...</div>';
+  try{
+    const r=await fetch(API+'/logiik/query',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:q,top_k:topK,min_score:0.0})});
+    const d=await r.json();
+    if(!d.results||!d.results.length){res.innerHTML='<div style="color:var(--muted);padding:12px">No results.</div>';return;}
+    res.innerHTML=d.results.map(r=>`
       <div class="result-card">
-        <span class="result-score">
-          Score: ${res.score.toFixed(4)}
-          ${res.cache_hit ?
-            '<span class="badge badge-green" ' +
-            'style="margin-left:4px">cache</span>' : ''}
-        </span>
-        <div class="result-source">${res.source || 'Unknown source'}</div>
-        <div class="result-text">${res.text}</div>
-      </div>
-    `).join('');
-
-    if (d.context) {
-      document.getElementById('query-context-card')
-              .style.display = 'block';
-      document.getElementById('query-context').textContent =
-        d.context;
-    }
-
-    addLog('info',
-      `Query: "${query.substring(0,40)}..." → ` +
-      `${d.results.length} results in ${d.latency_ms}ms`);
-  } catch(e) {
-    container.innerHTML =
-      '<div style="color:var(--red)">Query failed: ' +
-      e.message + '</div>';
-  }
+        <div class="result-score">Score: ${r.score.toFixed(4)}${r.cache_hit?' <span class="badge b-green">cache</span>':''}</div>
+        <div class="result-src">${r.source||'Unknown source'}</div>
+        <div class="result-text">${r.text}</div>
+      </div>`).join('');
+    addLog('info',`Query: "${q.substring(0,40)}…" → ${d.results.length} results in ${d.latency_ms}ms`);
+  }catch(e){res.innerHTML=`<div style="color:var(--red);padding:12px">Query failed: ${e.message}</div>`;}
 }
-
-// Allow Enter to submit query (Shift+Enter for newline)
-document.getElementById('query-input')
-  .addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      runQuery();
-    }
-  });
+document.getElementById('q-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();runQuery();}});
 
 // ── Logs ─────────────────────────────────────────────────────────────────────
-const _logs = [];
-
-function addLog(level, message) {
-  const ts = new Date().toLocaleTimeString();
-  _logs.unshift({ ts, level, message });
-  if (_logs.length > 200) _logs.pop();
+const _logs=[];
+function addLog(level,msg){
+  const ts=new Date().toLocaleTimeString();
+  _logs.unshift({ts,level,msg});
+  if(_logs.length>300)_logs.pop();
   renderLogs();
 }
-
-function renderLogs() {
-  const container = document.getElementById('log-container');
-  container.innerHTML = _logs.map(l => `
-    <div class="log-entry">
-      <span class="ts">[${l.ts}]</span>
-      <span class="level-${l.level}"> ${l.level.toUpperCase()} </span>
-      ${l.message}
-    </div>
-  `).join('');
+function renderLogs(){
+  document.getElementById('log-box').innerHTML=_logs.map(l=>
+    `<div class="log-line"><span class="log-ts">[${l.ts}]</span> <span class="log-${l.level}">${l.level.toUpperCase()}</span> ${l.msg}</div>`
+  ).join('');
 }
 
-function refreshLogs() {
-  addLog('info', 'Log refresh requested.');
+// ── Main loop ─────────────────────────────────────────────────────────────────
+async function tick(){
+  await pollHealth();
+  await Promise.allSettled([pollPhase(),pollTraining(),pollKnowledge(),pollGPU()]);
 }
 
-function clearLogs() {
-  _logs.length = 0;
-  renderLogs();
-}
-
-// ── Curriculum ────────────────────────────────────────────────────────────────
-let _curriculum = null;
-const TRACK_COLORS = {
-  foundation: '#3b82f6', language: '#22c55e', domain: '#a855f7',
-  execution: '#f97316', integration: '#eab308', capstone: '#ef4444',
-};
-const TRACK_BG = {
-  foundation: '#1e3a5f', language: '#14432a', domain: '#3b1f5e',
-  execution: '#4a2610', integration: '#3d3310', capstone: '#4a1515',
-};
-
-function _getPhaseTrack(phaseId) {
-  if (!_curriculum) return null;
-  for (const [track, data] of Object.entries(_curriculum.tracks || {})) {
-    if (data.phases && data.phases.some(p => p.id === phaseId))
-      return { track, color: data.color };
-  }
-  return null;
-}
-
-function renderCurriculum(d) {
-  _curriculum = d;
-  document.getElementById('curriculum-meta').textContent =
-    'Total phases: ' + d.total_phases +
-    ' · ' + Object.keys(d.tracks).length + ' tracks' +
-    ' · Last updated: ' + new Date().toLocaleTimeString();
-
-  const container = document.getElementById('curriculum-tracks');
-  const trackOrder = ['foundation','language','domain','execution','integration','capstone'];
-  container.innerHTML = trackOrder.map(track => {
-    const tdata = d.tracks[track];
-    if (!tdata) return '';
-    const color = tdata.color || TRACK_COLORS[track] || '#888';
-    const bg = TRACK_BG[track] || '#1a1d27';
-    const phases = tdata.phases || [];
-    const cards = phases.map(p => `
-      <div style="background:var(--surface);border:1px solid ${color}44;
-           border-left:3px solid ${color};border-radius:6px;padding:12px;
-           min-width:200px;flex:1">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-          <span style="background:${color};color:#000;font-size:10px;
-                font-weight:700;padding:2px 6px;border-radius:3px">
-            Phase ${p.id}
-          </span>
-          ${p.teacher_student ?
-            '<span style="background:#eab30844;color:#eab308;font-size:10px;' +
-            'padding:2px 6px;border-radius:3px;border:1px solid #eab30866">T-S</span>'
-            : ''}
-        </div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:4px">
-          ${p.display_name || p.name}
-        </div>
-        <div style="color:var(--text-muted);font-size:11px">
-          Gen ratio: ${p.generative_ratio != null ?
-            (p.generative_ratio * 100).toFixed(0) + '%' : '—'}
-          &nbsp;·&nbsp;
-          Threshold: ${p.correctness_threshold != null ?
-            (p.correctness_threshold * 100).toFixed(0) + '%' : '—'}
-        </div>
-      </div>
-    `).join('');
-
-    return `
-      <div style="margin-bottom:20px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <span style="width:10px;height:10px;border-radius:50%;
-                background:${color};display:inline-block"></span>
-          <span style="font-size:13px;font-weight:600;color:${color};
-                text-transform:capitalize">${track}</span>
-          <span style="color:var(--text-muted);font-size:11px">
-            (${phases.length} phase${phases.length !== 1 ? 's' : ''})
-          </span>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">${cards}</div>
-      </div>
-    `;
-  }).join('');
-}
-
-async function refreshCurriculum() {
-  try {
-    const d = await fetchJSON('/logiik/curriculum');
-    renderCurriculum(d);
-  } catch(e) {}
-}
-
-// ── Main polling loop ─────────────────────────────────────────────────────────
-async function refresh() {
-  await checkHealth();
-  await Promise.allSettled([
-    refreshPhase(),
-    refreshTraining(),
-    refreshKnowledge(),
-    refreshGPU(),
-  ]);
-}
-
-// ── How-To modal ──────────────────────────────────────────────────────────────
-function showHowTo() {
-  document.getElementById('howto-modal').style.display = 'block';
-  document.body.style.overflow = 'hidden';
-}
-function hideHowTo() {
-  document.getElementById('howto-modal').style.display = 'none';
-  document.body.style.overflow = '';
-}
-document.getElementById('howto-modal').addEventListener('click', function(e) {
-  if (e.target === this) hideHowTo();
-});
-
-refreshCurriculum();
-refresh();
-setInterval(refresh, REFRESH_MS);
+buildStrip();
+pollCurriculum();
+tick();
+setInterval(tick,POLL);
+setInterval(pollCurriculum,30000);
 </script>
 </body>
 </html>
