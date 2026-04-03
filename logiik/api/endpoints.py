@@ -702,7 +702,7 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         {"role": "system", "content": "You are a teacher AI creating training data."},
                         {"role": "user", "content": prompt},
                     ],
-                    temperature=0.7,
+                    temperature=1,
                     response_format={"type": "json_object"},
                     max_tokens=500,
                 ))
