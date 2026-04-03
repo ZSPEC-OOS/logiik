@@ -310,6 +310,248 @@ async function browseFolder() {
   }
 }
 
+/* ─── Cache Mode ─────────────────────────────────────────────── */
+const cacheConfig = {
+  enabled:    false,
+  ttlSeconds: 1800, // 30 minutes default
+};
+
+function _loadCacheConfigFromStorage() {
+  const enabled = localStorage.getItem('nero-cache-enabled') === '1';
+  const ttl     = parseInt(localStorage.getItem('nero-cache-ttl')) || 1800;
+  cacheConfig.enabled    = enabled;
+  cacheConfig.ttlSeconds = ttl;
+  if (enabled) {
+    const cb = document.getElementById('cache-enabled');
+    if (cb) cb.checked = true;
+    onCacheToggle(true, /*silent*/ true);
+    _applyTTLToInputs(ttl);
+    updateCacheTTLDisplay();
+  }
+}
+
+function onCacheToggle(enabled, silent = false) {
+  cacheConfig.enabled = enabled;
+  localStorage.setItem('nero-cache-enabled', enabled ? '1' : '0');
+
+  const settings    = document.getElementById('cache-settings');
+  const disabledHint = document.getElementById('cache-disabled-hint');
+  if (settings)     settings.style.display     = enabled ? 'block' : 'none';
+  if (disabledHint) disabledHint.style.display  = enabled ? 'none'  : 'block';
+
+  if (!silent) addLog('system', `Cache mode ${enabled ? 'enabled' : 'disabled'}`);
+}
+
+function updateCacheTTLDisplay() {
+  const val    = parseInt(document.getElementById('cache-ttl-value')?.value) || 30;
+  const unit   = parseInt(document.getElementById('cache-ttl-unit')?.value)  || 60;
+  const totalS = val * unit;
+  cacheConfig.ttlSeconds = totalS;
+  localStorage.setItem('nero-cache-ttl', totalS);
+
+  const el = document.getElementById('cache-ttl-display');
+  if (el) el.textContent = `= ${_fmtTTL(totalS)}`;
+}
+
+function _fmtTTL(s) {
+  if (s < 60)   return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return `${(s / 3600 % 1 === 0 ? s / 3600 : (s / 3600).toFixed(1))} hr`;
+}
+
+function _applyTTLToInputs(ttlSeconds) {
+  let val, unit;
+  if (ttlSeconds % 3600 === 0 && ttlSeconds >= 3600) { val = ttlSeconds / 3600; unit = '3600'; }
+  else if (ttlSeconds % 60 === 0 && ttlSeconds >= 60)  { val = ttlSeconds / 60;   unit = '60';   }
+  else                                                  { val = ttlSeconds;        unit = '1';    }
+  const vEl = document.getElementById('cache-ttl-value');
+  const uEl = document.getElementById('cache-ttl-unit');
+  if (vEl) vEl.value = val;
+  if (uEl) uEl.value = unit;
+}
+
+/* ─── Timing Test ────────────────────────────────────────────── */
+const TEST_PROMPTS = [
+  'What is supervised learning?',
+  'Explain gradient descent briefly.',
+  'Define overfitting in machine learning.',
+  'What is a neural network activation function?',
+  'Describe backpropagation in one sentence.',
+];
+
+async function runCacheTimingTest() {
+  const btn     = document.getElementById('btn-timing-test');
+  const results = document.getElementById('cache-test-results');
+  results.style.display = 'block';
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Testing…'; }
+
+  const statusEl = document.getElementById('ctr-status');
+  const timesEl  = document.getElementById('ctr-times');
+  const avgEl    = document.getElementById('ctr-avg');
+  const recEl    = document.getElementById('ctr-recommendation');
+  const drEl     = document.getElementById('ctr-deep-review');
+
+  timesEl.innerHTML = '';
+  avgEl.textContent = '';
+  recEl.textContent = '';
+  recEl.className   = 'ctr-recommendation';
+  drEl.innerHTML    = '';
+
+  const times = [];
+
+  for (let i = 0; i < TEST_PROMPTS.length; i++) {
+    statusEl.textContent = `Running test ${i + 1} / ${TEST_PROMPTS.length}…`;
+    const t0 = performance.now();
+    let ok = false;
+
+    try {
+      const res = await fetch(`${API}/ask`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ question: TEST_PROMPTS[i], require_original: false }),
+      });
+      ok = res.ok;
+    } catch (_) { ok = false; }
+
+    const ms = performance.now() - t0;
+
+    if (ok) {
+      times.push(ms);
+      timesEl.innerHTML +=
+        `<div class="ctr-time-row">
+           <span>Test ${i + 1} — <em style="color:var(--muted);font-size:.78rem;">${TEST_PROMPTS[i]}</em></span>
+           <span class="ctr-time-val">${(ms / 1000).toFixed(2)}s</span>
+         </div>`;
+    } else {
+      timesEl.innerHTML +=
+        `<div class="ctr-time-row error">
+           <span>Test ${i + 1}</span>
+           <span class="ctr-time-val">API unreachable</span>
+         </div>`;
+    }
+
+    await new Promise(r => setTimeout(r, 400));
+  }
+
+  if (times.length === 0) {
+    statusEl.textContent = 'Could not reach the API — is the server running and initialized?';
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Retry Test'; }
+    return;
+  }
+
+  const avg = times.reduce((a, b) => a + b, 0) / times.length;
+  const min = Math.min(...times);
+  const max = Math.max(...times);
+  const std = Math.sqrt(times.map(t => (t - avg) ** 2).reduce((a, b) => a + b, 0) / times.length);
+
+  statusEl.textContent = `Done — ${times.length}/${TEST_PROMPTS.length} succeeded`;
+  avgEl.textContent    =
+    `Avg ${(avg / 1000).toFixed(2)}s  ·  min ${(min / 1000).toFixed(2)}s  ·  max ${(max / 1000).toFixed(2)}s  ·  ±${(std / 1000).toFixed(2)}s`;
+
+  const rec = _buildRecommendation(avg, min, max, std, times.length);
+
+  recEl.textContent = `Recommended TTL: ${_fmtTTL(rec.ttlSeconds)}  —  ${rec.tier}`;
+  recEl.className   = `ctr-recommendation ctr-rec-${rec.cssKey}`;
+  drEl.innerHTML    = _renderDeepReview(rec, avg, min, max, std, times.length);
+
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Re-run Test'; }
+}
+
+/* ─── Recommendation Engine ──────────────────────────────────── */
+function _buildRecommendation(avgMs, minMs, maxMs, stdMs, n) {
+  const avgS = avgMs / 1000;
+  const stdS = stdMs / 1000;
+  const cv   = stdS / avgS; // coefficient of variation
+
+  let ttlSeconds, tier, cssKey, rationale, advice;
+
+  if (avgS < 1) {
+    ttlSeconds = 300; tier = 'Low Value'; cssKey = 'low-value';
+    rationale = 'Responses are very fast (< 1 s). The overhead of a cache lookup may rival the savings. A short TTL keeps things tidy without much benefit.';
+    advice    = 'Consider skipping caching entirely, or set a short TTL as insurance against rare slow responses.';
+  } else if (avgS < 3) {
+    ttlSeconds = 900; tier = 'Moderate'; cssKey = 'moderate';
+    rationale = 'Responses take 1–3 s. Caching gives a noticeable speedup for repeated or similar questions during a training phase.';
+    advice    = 'A 15-minute TTL covers most intra-phase repetition without stale-response risk.';
+  } else if (avgS < 8) {
+    ttlSeconds = 1800; tier = 'High Value'; cssKey = 'high-value';
+    rationale = 'Responses take 3–8 s each. Caching meaningfully reduces training wall-time and API costs.';
+    advice    = '30 minutes is a solid default — covers an entire phase with room for model warm-up variance.';
+  } else if (avgS < 20) {
+    ttlSeconds = 3600; tier = 'Critical'; cssKey = 'critical';
+    rationale = 'Responses are slow (8–20 s). Without caching, repeated similar questions burn significant time. Caching is strongly recommended.';
+    advice    = '1 hour ensures cached answers survive across phase restarts and brief pauses.';
+  } else {
+    ttlSeconds = 7200; tier = 'Essential'; cssKey = 'essential';
+    rationale = 'Responses exceed 20 s. Training without a cache will be severely bottlenecked by API latency.';
+    advice    = '2 hours is the minimum effective TTL. Consider 4–8 hours if your training sessions run overnight.';
+  }
+
+  // Variance penalty — high variability → extend TTL for stability
+  if (cv > 0.4) {
+    ttlSeconds = Math.round(ttlSeconds * 1.5);
+    rationale += ` High response variability (CV=${cv.toFixed(2)}) detected — TTL extended by 50 % for stability.`;
+  }
+
+  return { ttlSeconds, tier, cssKey, rationale, advice, cv, avgS, stdS };
+}
+
+function _renderDeepReview(rec, avgMs, minMs, maxMs, stdMs, n) {
+  const { ttlSeconds, tier, rationale, advice, cv, avgS, stdS } = rec;
+  const costLabel = avgS > 15 ? 'Very High' : avgS > 7 ? 'High' : avgS > 2 ? 'Medium' : 'Low';
+  const cvLabel   = cv < 0.15 ? 'Very stable' : cv < 0.30 ? 'Stable' : cv < 0.50 ? 'Moderate variance' : 'High variance';
+
+  const varNote = cv > 0.4
+    ? `<li>High variability (CV ${cv.toFixed(2)}) — responses fluctuate strongly; a longer TTL guards against slow outliers.</li>`
+    : '';
+  const costNote = avgS > 5
+    ? `<li>At ${avgS.toFixed(1)} s/prompt, uncached training would cost ~<strong>${Math.round(3600 / avgS)} API calls/hr</strong>.</li>`
+    : '';
+
+  return `
+    <div class="deep-review-box">
+      <div class="dr-title">Deep Review</div>
+
+      <div class="dr-grid">
+        <div class="dr-stat">
+          <div class="dr-label">Avg Latency</div>
+          <div class="dr-val">${(avgMs / 1000).toFixed(2)} s</div>
+        </div>
+        <div class="dr-stat">
+          <div class="dr-label">Std Dev</div>
+          <div class="dr-val">±${(stdMs / 1000).toFixed(2)} s  <span style="font-size:.75rem;color:var(--muted)">${cvLabel}</span></div>
+        </div>
+        <div class="dr-stat">
+          <div class="dr-label">API Cost Impact</div>
+          <div class="dr-val">${costLabel}</div>
+        </div>
+        <div class="dr-stat">
+          <div class="dr-label">Samples</div>
+          <div class="dr-val">${n} / ${TEST_PROMPTS.length}</div>
+        </div>
+      </div>
+
+      <div class="dr-rationale">${rationale}</div>
+
+      <div class="dr-breakdown-title">Recommendation Reasoning</div>
+      <ul class="dr-list">
+        <li>Each prompt takes ~<strong>${(avgMs / 1000).toFixed(2)} s</strong> — caching eliminates this cost on repeated questions.</li>
+        <li>Range: <strong>${(minMs / 1000).toFixed(2)} s – ${(maxMs / 1000).toFixed(2)} s</strong> across ${n} tests.</li>
+        ${varNote}
+        ${costNote}
+        <li>${advice}</li>
+      </ul>
+
+      <div class="dr-actions">
+        <button class="btn btn-sm btn-primary"
+                onclick="_applyTTLToInputs(${ttlSeconds}); updateCacheTTLDisplay();">
+          Apply ${_fmtTTL(ttlSeconds)} Recommendation
+        </button>
+      </div>
+    </div>`;
+}
+
 async function initializeSystem() {
   // Prefer model config state; fall back to hidden legacy fields
   const apiKey  = modelConfig.apiKey  || document.getElementById('f-apikey').value.trim();
@@ -1011,9 +1253,10 @@ function initTheme() {
   // 2. PIN screen — blocks UI via overlay; app init continues behind it
   initPINScreen(); // async, no await needed — PIN check is non-blocking
 
-  // 3. Theme + saved model config
+  // 3. Theme + saved model config + cache config
   initTheme();
   _loadModelConfigFromStorage();
+  _loadCacheConfigFromStorage();
 
   // 4. Derive session key and restore local state
   state.persistenceKey = _sessionKey(localStorage.getItem('nero-f-kbpath') || '');
