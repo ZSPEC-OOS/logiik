@@ -771,8 +771,10 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
 
     import openai as _openai
     import json as _json
+    from logiik.storage.text_store import TextStore as _TextStore
 
     client = _openai.OpenAI(api_key=api_key, base_url=base_url)
+    _text_store = _TextStore()
     phases, min_per_topic, max_per_topic, check_interval = _load_curriculum_phases()
     criteria_map = _load_phase_criteria()
     total_phases = len(phases)
@@ -845,6 +847,8 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                     except Exception:
                         pass
         return questions
+
+    _backoff_counts: dict = {}
 
     try:
         for phase_id, phase_name, topics in phases:
@@ -950,6 +954,8 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                             "correct_indices": correct_idxs,
                         }
                         _append_record(out_path, record)
+                        _record_id = f"p{phase_id:02d}_{total_saved:06d}"
+                        _text_store.store_training_record(_record_id, record)
                         topic_pool.append(data["question"])
 
                         ex_idx      += 1
@@ -959,7 +965,19 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                     except Exception as e:
                         err = str(e)
                         logger.warning("Q&A error (topic=%s): %s", topic[:40], err)
-                        wait = 15 if ("429" in err or "rate_limit" in err.lower()) else 4
+                        _overloaded = (
+                            "429" in err
+                            or "rate_limit" in err.lower()
+                            or "engine_overloaded" in err.lower()
+                            or "overloaded" in err.lower()
+                        )
+                        if _overloaded:
+                            _backoff_key = topic[:40]
+                            _backoff_counts[_backoff_key] = _backoff_counts.get(_backoff_key, 0) + 1
+                            wait = min(120, 15 * (2 ** (_backoff_counts[_backoff_key] - 1)))
+                        else:
+                            _backoff_counts.pop(topic[:40], None)
+                            wait = 4
                         await asyncio.sleep(wait)
                         continue
 
