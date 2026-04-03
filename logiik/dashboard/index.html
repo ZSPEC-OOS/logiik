@@ -1343,11 +1343,33 @@ async function runCacheTest(){
 // TRAINING CONTROLS
 // ════════════════════════════════════════════════════════════════════════════
 async function controlTraining(action){
-  const endpoint=action==='start'?'/train/start':'/train/stop';
-  try{
-    await fetch(API+endpoint,{method:'POST'});
-    addLog('info','Training '+(action==='start'?'started':'paused'));
-  }catch(e){ addLog('err','Control failed: '+e.message); }
+  if(action==='start'){
+    if(!_mcfg.ready||!_mcfg.apiKey||!_mcfg.baseUrl||!_mcfg.modelId){
+      addLog('err','Configure and initialize model in Settings before starting training.');
+      return;
+    }
+    try{
+      const r=await fetch(API+'/train/start',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          api_key:_mcfg.apiKey,
+          base_url:_mcfg.baseUrl,
+          model_id:_mcfg.modelId,
+          topics_description:'NLP and scientific reasoning curriculum',
+          knowledge_base_path:'./knowledge_base'
+        })
+      });
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) addLog('err','Start failed: '+(d.detail||r.status));
+      else addLog('info','Training started — '+d.status);
+    }catch(e){ addLog('err','Start failed: '+e.message); }
+  } else {
+    try{
+      await fetch(API+'/train/stop',{method:'POST'});
+      addLog('info','Training paused / stopped');
+    }catch(e){ addLog('err','Stop failed: '+e.message); }
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

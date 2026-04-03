@@ -13,8 +13,10 @@ Run standalone:
     uvicorn logiik.api.endpoints:app --host 0.0.0.0 --port 8001
 """
 import os
+import sys
 import subprocess
 import asyncio
+import time
 from pathlib import Path
 from typing import Any, Optional, Dict, List
 from datetime import datetime
@@ -636,6 +638,116 @@ async def query_knowledge(request: QueryRequest):
     except Exception as e:
         logger.error(f"Query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Training process management ─────────────────────────────────────────────
+
+_cognita_proc: Optional[subprocess.Popen] = None
+_COGNITA_PORT = 8000
+
+
+class TrainingStartRequest(BaseModel):
+    api_key: str
+    base_url: str
+    model_id: str
+    topics_description: str = "NLP and scientific reasoning curriculum"
+    knowledge_base_path: str = "./knowledge_base"
+
+
+def _cognita_url(path: str) -> str:
+    return f"http://localhost:{_COGNITA_PORT}{path}"
+
+
+def _post_json(url: str, payload: dict, timeout: int = 10) -> dict:
+    import requests as _req
+    r = _req.post(url, json=payload, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
+
+
+def _wait_for_cognita(timeout: int = 30) -> bool:
+    import requests as _req
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            _req.get(_cognita_url("/health"), timeout=2)
+            return True
+        except Exception:
+            time.sleep(1)
+    return False
+
+
+@app.post("/train/start")
+async def start_training(req: TrainingStartRequest):
+    """Spawn the cognita training server, initialise it, and start the training loop."""
+    global _cognita_proc
+
+    if _cognita_proc and _cognita_proc.poll() is None:
+        return {"status": "already_running"}
+
+    root = Path(__file__).parents[2]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(root)
+
+    _cognita_proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "cognita.api.server:app",
+         "--host", "0.0.0.0", "--port", str(_COGNITA_PORT)],
+        cwd=str(root),
+        env=env,
+    )
+
+    loop = asyncio.get_event_loop()
+
+    ready = await loop.run_in_executor(None, lambda: _wait_for_cognita(30))
+    if not ready:
+        _cognita_proc.terminate()
+        raise HTTPException(status_code=503, detail="Training server failed to start")
+
+    try:
+        await loop.run_in_executor(None, lambda: _post_json(
+            _cognita_url("/initialize"),
+            {
+                "teacher_api_key": req.api_key,
+                "teacher_base_url": req.base_url,
+                "teacher_model": req.model_id,
+                "topics_description": req.topics_description,
+                "knowledge_base_path": req.knowledge_base_path,
+            },
+            timeout=30,
+        ))
+        await loop.run_in_executor(None, lambda: _post_json(
+            _cognita_url("/train/start"), {}, timeout=10
+        ))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Training init failed: {e}")
+
+    logger.info("Training started via cognita server on port %d", _COGNITA_PORT)
+    return {"status": "training_started"}
+
+
+@app.post("/train/stop")
+async def stop_training():
+    """Stop the active training loop and shut down the cognita server."""
+    global _cognita_proc
+
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, lambda: _post_json(
+            _cognita_url("/train/stop"), {}, timeout=5
+        ))
+    except Exception:
+        pass  # best-effort
+
+    if _cognita_proc and _cognita_proc.poll() is None:
+        _cognita_proc.terminate()
+        try:
+            _cognita_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _cognita_proc.kill()
+
+    _cognita_proc = None
+    logger.info("Training stopped")
+    return {"status": "training_stopped"}
 
 
 # ─── Static dashboard ─────────────────────────────────────────────────────────
