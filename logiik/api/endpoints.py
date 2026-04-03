@@ -692,27 +692,29 @@ def _saturation_score(recent_questions: List[str], pool: List[str]) -> float:
     return sum(scores) / len(scores)
 
 
-# ── Per-track generation limits ───────────────────────────────────────────────
+# ── Per-track generation limits & dedup thresholds ───────────────────────────
+# Dedup threshold: lower = stricter. Foundation questions share few words even
+# when conceptually similar, so 0.40 catches near-duplicates without blocking
+# genuinely different questions. Domain/integration share heavy vocabulary so
+# need a higher threshold to avoid false positives.
 
 _TRACK_LIMITS = {
-    "foundation":  {"min": 10, "max": 20},   # diverse facts, not drills
-    "language":    {"min": 15, "max": 25},
-    "domain":      {"min": 20, "max": 35},
-    "execution":   {"min": 15, "max": 25},
-    "integration": {"min": 20, "max": 35},
-    "capstone":    {"min": 25, "max": 40},
+    "foundation":  {"min": 10, "max": 20, "dedup": 0.40},
+    "language":    {"min": 15, "max": 25, "dedup": 0.50},
+    "domain":      {"min": 20, "max": 35, "dedup": 0.60},
+    "execution":   {"min": 15, "max": 25, "dedup": 0.55},
+    "integration": {"min": 20, "max": 35, "dedup": 0.60},
+    "capstone":    {"min": 25, "max": 40, "dedup": 0.60},
 }
 
 # ── Deduplication ─────────────────────────────────────────────────────────────
 
-_DEDUP_THRESHOLD = 0.65  # Jaccard — skip generation if new Q is this similar to any in pool
-
-def _is_duplicate(question: str, pool: List[str]) -> bool:
+def _is_duplicate(question: str, pool: List[str], threshold: float = 0.40) -> bool:
     """Return True if question is too similar to any question already in pool."""
     if not pool:
         return False
     q_set = _word_set(question)
-    return any(_jaccard(q_set, _word_set(p)) >= _DEDUP_THRESHOLD for p in pool)
+    return any(_jaccard(q_set, _word_set(p)) >= threshold for p in pool)
 
 
 # ── Phase-aware prompt construction ──────────────────────────────────────────
@@ -1089,9 +1091,10 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
             phase_cfg = _get_phase(phase_id)
             track     = phase_cfg.track if phase_cfg else "foundation"
             q_types   = (phase_cfg.question_types if phase_cfg else ["factual_recall"])
-            limits    = _TRACK_LIMITS.get(track, {"min": 15, "max": 25})
-            phase_min = limits["min"]
-            phase_max = limits["max"]
+            limits       = _TRACK_LIMITS.get(track, {"min": 15, "max": 25, "dedup": 0.55})
+            phase_min    = limits["min"]
+            phase_max    = limits["max"]
+            dedup_thresh = limits.get("dedup", 0.55)
 
             criteria = _match_phase_criteria(phase_name, criteria_map)
             phase_coverage_threshold  = criteria.get("coverage_ratio", 0.95)
@@ -1208,7 +1211,7 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         question = data.get("question", "")
                         if not question:
                             continue
-                        if _is_duplicate(question, topic_pool):
+                        if _is_duplicate(question, topic_pool, dedup_thresh):
                             logger.debug("  Skipped duplicate for topic '%s'", topic[:40])
                             continue
 
