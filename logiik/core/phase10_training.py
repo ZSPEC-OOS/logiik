@@ -615,6 +615,19 @@ class Phase10Trainer:
                 completion_diag.get("abstention_precision", -1),
                 completion_diag.get("abstention_threshold", 0.80),
             )
+
+        # Push diagnostics into the live dashboard metrics dict if available.
+        try:
+            from logiik.api.endpoints import _phase_metrics as _pm
+            _pm.update({
+                "phase12_brier_score":          completion_diag.get("avg_brier_score"),
+                "phase12_abstention_precision": completion_diag.get("abstention_precision"),
+                "phase12_complete":             completion_diag.get("phase_complete"),
+                "phase12_n_scenarios":          completion_diag.get("n_scenarios_evaluated"),
+            })
+        except Exception:
+            pass  # Dashboard not running — metrics still accessible via all_metrics return
+
         return all_metrics
 
     def is_phase_complete(self) -> Tuple[bool, Dict]:

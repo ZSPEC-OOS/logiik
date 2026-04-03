@@ -316,6 +316,30 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
       <div class="chart-box"><canvas id="ph-cov-chart"></canvas></div>
     </div>
   </div>
+  <!-- Phase 12 only — hidden until synthetic_judgment phase is active -->
+  <div class="card" id="ph12-card" style="display:none;margin-bottom:14px">
+    <h3>Phase 12 — Synthetic Judgment (PPO)</h3>
+    <div class="grid g4" style="margin-top:10px">
+      <div>
+        <div class="metric-sub" style="margin-bottom:4px">Brier Score</div>
+        <div class="metric" id="ph12-brier" style="font-size:22px">—</div>
+        <div class="metric-sub">Target: &lt; 0.20</div>
+      </div>
+      <div>
+        <div class="metric-sub" style="margin-bottom:4px">Abstention Precision</div>
+        <div class="metric" id="ph12-abst" style="font-size:22px">—</div>
+        <div class="metric-sub">Target: &gt; 80%</div>
+      </div>
+      <div>
+        <div class="metric-sub" style="margin-bottom:4px">Scenarios Run</div>
+        <div class="metric blue" id="ph12-scenarios" style="font-size:22px">—</div>
+      </div>
+      <div>
+        <div class="metric-sub" style="margin-bottom:4px">PPO Status</div>
+        <div id="ph12-status-badge"><span class="badge b-gray">Pending</span></div>
+      </div>
+    </div>
+  </div>
   <div class="card">
     <h3>All 12 Phases</h3>
     <div id="all-phases-list" style="margin-top:4px"></div>
@@ -351,7 +375,7 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
     <div class="card">
       <h3>Banked Examples</h3>
       <div class="metric green" id="tr-bank">0</div>
-      <div class="metric-sub" id="tr-toss">Tossed: 0</div>
+      <div class="metric-sub" id="tr-toss">Semantic Dedup Tossed: 0</div>
     </div>
     <div class="card">
       <h3>State</h3>
@@ -397,10 +421,17 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
       <div class="metric-sub" id="kb-checkpoints">Checkpoints: —</div>
     </div>
   </div>
-  <div class="card">
-    <h3>Ingestion Mode</h3>
-    <div id="kb-mode" style="margin-bottom:8px"><span class="badge b-blue">lite_mode</span></div>
-    <div class="metric-sub">Lite: 1–500 PDFs &nbsp;|&nbsp; Full: 500–50,000 PDFs</div>
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="card">
+      <h3>Ingestion Mode</h3>
+      <div id="kb-mode" style="margin-bottom:8px"><span class="badge b-blue">lite_mode</span></div>
+      <div class="metric-sub">Lite: 1–500 PDFs &nbsp;|&nbsp; Full: 500–50,000 PDFs</div>
+    </div>
+    <div class="card">
+      <h3>Q&amp;A Corpus Scale</h3>
+      <div class="metric blue" id="kb-scale">1×</div>
+      <div class="metric-sub" id="kb-scale-sub">0 chunks ingested — base limits active</div>
+    </div>
   </div>
 </div>
 
@@ -853,6 +884,25 @@ async function pollPhase(){
     else if(cov>0)sb.innerHTML='<span class="badge b-blue">In Progress</span>';
     else sb.innerHTML='<span class="badge b-gray">Waiting</span>';
     push(C.ovCov,cov);push(C.phCov,cov);
+    // Phase 12 PPO diagnostics card
+    const ph12=document.getElementById('ph12-card');
+    if(d.phase_id===12){
+      ph12.style.display='';
+      const brier=d.phase12_brier_score;
+      const abst=d.phase12_abstention_precision;
+      const done=d.phase12_complete;
+      document.getElementById('ph12-brier').textContent=brier!=null?brier.toFixed(4):'—';
+      document.getElementById('ph12-brier').className='metric '+(brier!=null?(brier<0.20?'green':'red'):'');
+      document.getElementById('ph12-abst').textContent=abst!=null?pct(abst):'—';
+      document.getElementById('ph12-abst').className='metric '+(abst!=null?(abst>=0.80?'green':'red'):'');
+      document.getElementById('ph12-scenarios').textContent=d.phase12_n_scenarios??'—';
+      const psb=document.getElementById('ph12-status-badge');
+      if(done===true)psb.innerHTML='<span class="badge b-green">PPO Complete</span>';
+      else if(done===false)psb.innerHTML='<span class="badge b-red">Not Yet Met</span>';
+      else psb.innerHTML='<span class="badge b-gray">Pending PPO Run</span>';
+    }else{
+      ph12.style.display='none';
+    }
     updateStrip();renderPhaseList();
   }catch{}
 }
@@ -872,7 +922,14 @@ async function pollTraining(){
     document.getElementById('tr-step').textContent=d.step||0;
     document.getElementById('tr-phase').textContent='Phase: '+(d.current_phase||'—');
     document.getElementById('tr-bank').textContent=d.bank_count||0;
-    document.getElementById('tr-toss').textContent='Tossed: '+(d.toss_count||0);
+    document.getElementById('tr-toss').textContent='Semantic Dedup Tossed: '+(d.toss_count||0);
+    // Corpus scale
+    const scale=d.corpus_scale_factor||1;
+    const chunks=d.corpus_n_chunks||0;
+    document.getElementById('kb-scale').textContent=scale.toFixed(1)+'×';
+    document.getElementById('kb-scale').className='metric '+(scale>1?'green':'blue');
+    document.getElementById('kb-scale-sub').textContent=
+      chunks>0?`${chunks.toLocaleString()} chunks ingested`:'0 chunks — base limits active';
     document.getElementById('tr-examples').textContent='Examples: '+(d.examples_processed||0);
     const sb=document.getElementById('tr-state-badge');
     if(d.training_complete)sb.innerHTML='<span class="badge b-green">Complete</span>';
