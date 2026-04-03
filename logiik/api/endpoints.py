@@ -1017,8 +1017,9 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
         ]
         loop = asyncio.get_event_loop()
 
-        def _do_call(use_json_format: bool):
-            kwargs = dict(model=model_id, messages=messages, temperature=1, max_tokens=2000)
+        def _do_call(use_json_format: bool, use_completion_tokens: bool = False):
+            token_key = "max_completion_tokens" if use_completion_tokens else "max_tokens"
+            kwargs = dict(model=model_id, messages=messages, temperature=1, **{token_key: 2000})
             if use_json_format:
                 kwargs["response_format"] = {"type": "json_object"}
             return client.chat.completions.create(**kwargs)
@@ -1026,8 +1027,13 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
         try:
             response = await loop.run_in_executor(None, lambda: _do_call(True))
         except Exception as e:
-            if "response_format" in str(e).lower() or "400" in str(e):
-                response = await loop.run_in_executor(None, lambda: _do_call(False))
+            err = str(e)
+            use_completion = "max_tokens" in err and "max_completion_tokens" in err
+            use_json       = not ("response_format" in err.lower() or ("400" in err and not use_completion))
+            if "400" in err:
+                response = await loop.run_in_executor(
+                    None, lambda: _do_call(use_json, use_completion)
+                )
             else:
                 raise
 
