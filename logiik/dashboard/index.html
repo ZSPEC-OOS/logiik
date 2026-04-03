@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>LOGIIK — Scientific AI Training</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Firebase compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -169,6 +172,22 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
 </head>
 <body>
 
+<!-- ═══════════════════════════════════════════════════════ PIN LOCK -->
+<div id="pin-screen" style="position:fixed;inset:0;background:#060912;z-index:9999;display:flex;align-items:center;justify-content:center">
+  <div style="background:#0d1117;border:1px solid #1e2840;border-radius:12px;padding:40px 36px;width:320px;text-align:center">
+    <div style="font-size:22px;font-weight:800;letter-spacing:0.12em;color:#fff;margin-bottom:4px">L<span style="color:#4f8ef7">O</span>GIIK</div>
+    <div style="font-size:10px;color:#5a6a8a;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:28px">Enter PIN to continue</div>
+    <input id="pin-input" type="password" maxlength="8" placeholder="••••"
+      style="width:100%;padding:12px;background:#131929;border:1px solid #1e2840;border-radius:8px;color:#dde4f0;font-size:22px;letter-spacing:0.35em;text-align:center;outline:none;margin-bottom:12px;font-family:inherit"
+      onkeydown="if(event.key==='Enter')verifyPIN()" />
+    <button onclick="verifyPIN()"
+      style="width:100%;padding:10px;background:#4f8ef7;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px">
+      Unlock
+    </button>
+    <div id="pin-err" style="color:#ef4444;font-size:12px;min-height:18px"></div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════ SIDEBAR -->
 <div id="sidebar">
   <div id="brand">
@@ -187,10 +206,23 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
     <div class="nav-section">Tools</div>
     <div class="nav-item" onclick="nav('query',this)"><span class="icon">⌕</span>Query</div>
     <div class="nav-item" onclick="nav('logs',this)"><span class="icon">≡</span>Logs</div>
+    <div class="nav-section">Config</div>
+    <div class="nav-item" onclick="nav('settings',this)"><span class="icon">⚙</span>Settings</div>
   </div>
   <div id="sidebar-foot">
     <div class="api-row"><div class="dot" id="api-dot"></div><span id="api-label">Connecting...</span></div>
-    <button id="howto-btn" onclick="openModal()">? How To Build Dataset</button>
+    <!-- Training controls -->
+    <div style="display:flex;gap:6px;margin-top:10px">
+      <button id="btn-start" onclick="controlTraining('start')"
+        style="flex:1;padding:7px 4px;background:#14432a;color:#22c55e;border:1px solid #22c55e55;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">
+        ▶ Start
+      </button>
+      <button id="btn-pause" onclick="controlTraining('pause')"
+        style="flex:1;padding:7px 4px;background:#2d1a0a;color:#f97316;border:1px solid #f9731655;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">
+        ⏸ Pause
+      </button>
+    </div>
+    <button id="howto-btn" onclick="openModal()" style="margin-top:8px">? How To Build Dataset</button>
   </div>
 </div>
 
@@ -319,6 +351,10 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
       <h3>State</h3>
       <div id="tr-state-badge"><span class="badge b-gray">Idle</span></div>
       <div class="metric-sub" id="tr-examples" style="margin-top:8px">Examples: 0</div>
+      <!-- Conditional download button — shown only when training_complete -->
+      <button id="btn-download" onclick="downloadOutput()" style="display:none;margin-top:10px;width:100%;padding:7px;background:#14432a;color:#22c55e;border:1px solid #22c55e55;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">
+        ⬇ Download Output
+      </button>
     </div>
   </div>
   <div class="card">
@@ -426,6 +462,118 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
     </div>
   </div>
   <div id="log-box"><div class="log-line"><span class="log-ts">[--:--:--]</span> <span class="log-info">INFO</span> LOGIIK dashboard initialised.</div></div>
+</div>
+
+<!-- ── SETTINGS ── -->
+<div class="view" id="v-settings">
+  <div class="page-header">
+    <div class="page-title">Settings</div>
+    <div class="page-sub">Model configuration, cache mode, and Firebase sync — all auto-saved to cloud</div>
+  </div>
+
+  <!-- AI Model Config -->
+  <div class="card" style="margin-bottom:14px">
+    <h3>AI Model Configuration</h3>
+    <div class="grid g3" style="margin-bottom:14px">
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">API KEY</div>
+        <input id="s-apikey" type="password" placeholder="sk-…" autocomplete="off"
+          style="width:100%;padding:8px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none"
+          oninput="onSettingInput()" />
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">BASE URL</div>
+        <input id="s-baseurl" type="text" placeholder="https://api.moonshot.cn/v1"
+          style="width:100%;padding:8px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none"
+          oninput="onSettingInput()" />
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600">MODEL ID</div>
+        <input id="s-model" type="text" placeholder="kimi-k2-5"
+          style="width:100%;padding:8px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none"
+          oninput="onSettingInput()" />
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button onclick="saveModelConfig()"
+        style="padding:8px 20px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">
+        ⚡ Initialize Connection
+      </button>
+      <span id="s-mc-msg" style="font-size:11.5px;color:var(--muted)"></span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)">
+        <div id="s-mc-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0"></div>
+        <span id="s-mc-status">Not configured</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cache Mode -->
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="margin:0">Cache Mode</h3>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11.5px;color:var(--dim)">
+        <span id="cache-toggle-label">Disabled</span>
+        <div id="cache-toggle" onclick="toggleCache()" style="width:40px;height:22px;background:var(--s3);border-radius:11px;position:relative;cursor:pointer;border:1px solid var(--border);transition:background 0.2s">
+          <div id="cache-knob" style="position:absolute;top:3px;left:3px;width:14px;height:14px;background:#5a6a8a;border-radius:50%;transition:all 0.2s"></div>
+        </div>
+      </label>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:14px">
+      Cache teacher AI responses to reduce API calls. Run the timing test to get a recommendation.
+    </div>
+
+    <div id="cache-settings" style="display:none">
+      <!-- Duration -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <span style="font-size:11px;font-weight:600;color:var(--dim);white-space:nowrap">Cache Duration</span>
+        <input id="cache-ttl-val" type="number" value="30" min="1" max="9999" oninput="onCacheTTLChange()"
+          style="width:72px;padding:6px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none" />
+        <select id="cache-ttl-unit" onchange="onCacheTTLChange()"
+          style="padding:6px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none;cursor:pointer">
+          <option value="1">seconds</option>
+          <option value="60" selected>minutes</option>
+          <option value="3600">hours</option>
+        </select>
+        <span id="cache-ttl-display" style="font-size:11px;color:var(--muted)">= 30 min</span>
+      </div>
+
+      <!-- Timing Test -->
+      <div style="border-top:1px solid var(--border);padding-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:11.5px;font-weight:600">Prompt Timing Test</span>
+          <button id="btn-run-test" onclick="runCacheTest()"
+            style="padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">
+            ▶ Run Test
+          </button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px">
+          Sends 3 prompts cold then warm. Speedup ≥ 1.8× = provider cache detected. TTL capped inside provider's window.
+        </div>
+        <div id="cache-test-out" style="display:none">
+          <div id="ctr-status" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+          <div id="ctr-rows" style="background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px;font-size:11.5px"></div>
+          <div id="ctr-avg" style="font-size:12px;font-weight:600;margin-bottom:10px"></div>
+          <div id="ctr-rec" style="padding:8px 12px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s2);margin-bottom:10px"></div>
+          <div id="ctr-review" style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:11.5px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase Status -->
+  <div class="card">
+    <h3>Firebase Sync</h3>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div id="fb-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0"></div>
+      <span id="fb-status" style="font-size:12px;color:var(--muted)">Initialising…</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.8">
+      <div>• Settings auto-saved to <code style="background:var(--s3);padding:1px 5px;border-radius:3px">app_config/settings</code></div>
+      <div>• Training metrics → <code style="background:var(--s3);padding:1px 5px;border-radius:3px">sessions/{key}</code></div>
+      <div>• Phase events → <code style="background:var(--s3);padding:1px 5px;border-radius:3px">phase_events</code></div>
+      <div>• Generated questions → <code style="background:var(--s3);padding:1px 5px;border-radius:3px">question_bank</code></div>
+    </div>
+  </div>
 </div>
 
 </div><!-- #main -->
@@ -806,6 +954,394 @@ pollCurriculum();
 tick();
 setInterval(tick,POLL);
 setInterval(pollCurriculum,30000);
+
+// ── Training complete: show Download button ────────────────────────────────
+const _origPollTraining = pollTraining;
+pollTraining = async function(){
+  await _origPollTraining();
+  try{
+    const d = await api('/logiik/training_metrics').catch(()=>null);
+    if(d && d.training_complete){
+      document.getElementById('btn-download').style.display='block';
+    }
+  }catch{}
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// FIREBASE
+// ════════════════════════════════════════════════════════════════════════════
+const FB_CONFIG={
+  apiKey:'AIzaSyDkbAhy7PlrYzHR5F-EDBquUtZ9fwLsyHg',
+  authDomain:'logiik.firebaseapp.com',
+  projectId:'logiik',
+  storageBucket:'logiik.firebasestorage.app',
+  messagingSenderId:'835296209489',
+  appId:'1:835296209489:web:830f7cc853e729ecc42670'
+};
+let db=null;
+let _fbWriteTimer=null, _fbSettingsTimer=null, _fbQBankTimer=null;
+let _lastQCount=0, _resolvedPIN='5522';
+
+function initFirebase(){
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
+    db=firebase.firestore();
+    document.getElementById('fb-dot').style.background='#22c55e';
+    document.getElementById('fb-status').textContent='Connected — all data syncing to Firestore';
+    addLog('info','Firebase connected');
+  }catch(e){
+    document.getElementById('fb-status').textContent='Firebase unavailable — using local only';
+    addLog('warn','Firebase init failed: '+e.message);
+  }
+}
+
+async function fbFetchPIN(){
+  if(!db) return;
+  try{
+    const s=await db.collection('app_config').doc('pin').get();
+    if(s.exists) _resolvedPIN=s.data().value;
+    else await db.collection('app_config').doc('pin').set({value:'5522'});
+  }catch{}
+}
+
+function fbScheduleMetrics(){
+  if(!db) return;
+  clearTimeout(_fbWriteTimer);
+  _fbWriteTimer=setTimeout(async()=>{
+    try{
+      await db.collection('sessions').doc('default').set({
+        phase:_currentPhase, updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      },{merge:true});
+    }catch{}
+  },3000);
+}
+
+async function fbSaveSettings(cfg){
+  if(!db) return;
+  try{
+    await db.collection('app_config').doc('settings').set({
+      ...cfg, updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    },{merge:true});
+  }catch{}
+}
+
+async function fbLoadSettings(){
+  if(!db) return;
+  try{
+    const s=await db.collection('app_config').doc('settings').get();
+    if(!s.exists) return;
+    const d=s.data();
+    if(d.modelApiKey){ document.getElementById('s-apikey').value=d.modelApiKey; _mcfg.apiKey=d.modelApiKey; }
+    if(d.modelBaseUrl){ document.getElementById('s-baseurl').value=d.modelBaseUrl; _mcfg.baseUrl=d.modelBaseUrl; }
+    if(d.modelId){ document.getElementById('s-model').value=d.modelId; _mcfg.modelId=d.modelId; }
+    if(d.modelApiKey&&d.modelBaseUrl&&d.modelId){ _mcfg.ready=true; _setMCStatus(true,d.modelId); }
+    if(d.cacheEnabled){ _cacheOn=true; _applyCacheToggleUI(true); }
+    if(d.cacheTtlSeconds){ _cacheTTL=d.cacheTtlSeconds; _applyTTLInputs(d.cacheTtlSeconds); _updateTTLDisplay(); }
+    addLog('info','Settings restored from Firestore');
+  }catch(e){ addLog('warn','Settings load failed: '+e.message); }
+}
+
+async function fbWritePhaseEvent(phase){
+  if(!db) return;
+  try{ await db.collection('phase_events').add({phase, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); }catch{}
+}
+
+function fbScheduleQBank(){
+  if(!db) return;
+  clearTimeout(_fbQBankTimer);
+  _fbQBankTimer=setTimeout(async()=>{
+    try{
+      const r=await fetch(API+'/logs/question-bank');
+      if(!r.ok) return;
+      const data=await r.json();
+      const entries=Array.isArray(data.entries)?data.entries:[];
+      const newOnes=entries.slice(_lastQCount);
+      if(!newOnes.length) return;
+      const batch=db.batch();
+      newOnes.forEach(e=>{
+        const ref=db.collection('question_bank').doc(String(e.id));
+        batch.set(ref,{question_id:e.id,question:e.question,
+          timestamp:e.timestamp?new Date(e.timestamp*1000):firebase.firestore.FieldValue.serverTimestamp()});
+      });
+      await batch.commit();
+      _lastQCount=entries.length;
+    }catch{}
+  },3000);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PIN SCREEN
+// ════════════════════════════════════════════════════════════════════════════
+async function initPIN(){
+  if(sessionStorage.getItem('logiik-pin')==='1'){ hidePIN(); return; }
+  await fbFetchPIN();
+  document.getElementById('pin-input').focus();
+}
+
+function verifyPIN(){
+  const v=document.getElementById('pin-input').value;
+  const err=document.getElementById('pin-err');
+  if(v===_resolvedPIN){
+    sessionStorage.setItem('logiik-pin','1');
+    hidePIN();
+  }else{
+    err.textContent='Incorrect PIN — try again.';
+    document.getElementById('pin-input').value='';
+    document.getElementById('pin-input').focus();
+  }
+}
+
+function hidePIN(){
+  const el=document.getElementById('pin-screen');
+  if(el) el.style.display='none';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MODEL CONFIG
+// ════════════════════════════════════════════════════════════════════════════
+const _mcfg={apiKey:'',baseUrl:'',modelId:'',ready:false};
+let _settingsTimer=null;
+
+function _setMCStatus(ok,label){
+  document.getElementById('s-mc-dot').style.background=ok?'#22c55e':'#5a6a8a';
+  document.getElementById('s-mc-status').textContent=ok?'Connected · '+label:'Not configured';
+}
+
+function onSettingInput(){
+  clearTimeout(_settingsTimer);
+  _settingsTimer=setTimeout(()=>fbSaveSettings({
+    modelApiKey:document.getElementById('s-apikey').value,
+    modelBaseUrl:document.getElementById('s-baseurl').value,
+    modelId:document.getElementById('s-model').value,
+    cacheEnabled:_cacheOn, cacheTtlSeconds:_cacheTTL
+  }),1500);
+}
+
+async function saveModelConfig(){
+  const apiKey=document.getElementById('s-apikey').value.trim();
+  const baseUrl=document.getElementById('s-baseurl').value.trim();
+  const modelId=document.getElementById('s-model').value.trim();
+  const msg=document.getElementById('s-mc-msg');
+  if(!apiKey||!baseUrl||!modelId){ msg.style.color='#ef4444'; msg.textContent='All three fields required.'; return; }
+  msg.style.color='#eab308'; msg.textContent='Validating…';
+  _mcfg.apiKey=apiKey; _mcfg.baseUrl=baseUrl; _mcfg.modelId=modelId; _mcfg.ready=true;
+  try{
+    await fetch(API+'/logiik/health');
+    msg.style.color='#22c55e'; msg.textContent='Config saved — connection active.';
+  }catch{
+    msg.style.color='#eab308'; msg.textContent='Config saved — server unreachable.';
+  }
+  _setMCStatus(true,modelId);
+  await fbSaveSettings({modelApiKey:apiKey,modelBaseUrl:baseUrl,modelId,cacheEnabled:_cacheOn,cacheTtlSeconds:_cacheTTL});
+  addLog('info','Model config initialized: '+modelId);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CACHE MODE
+// ════════════════════════════════════════════════════════════════════════════
+let _cacheOn=false, _cacheTTL=1800;
+
+const PROVIDER_WINDOWS={openai:300,anthropic:300,moonshot:600,grok:300,generic:240};
+function _providerWindow(url){
+  if(!url) return PROVIDER_WINDOWS.generic;
+  const u=url.toLowerCase();
+  if(u.includes('openai.com')) return PROVIDER_WINDOWS.openai;
+  if(u.includes('anthropic.com')) return PROVIDER_WINDOWS.anthropic;
+  if(u.includes('moonshot')||u.includes('kimi')) return PROVIDER_WINDOWS.moonshot;
+  if(u.includes('x.ai')||u.includes('grok')) return PROVIDER_WINDOWS.grok;
+  return PROVIDER_WINDOWS.generic;
+}
+
+function _fmtTTL(s){ if(s<60) return s+'s'; if(s<3600) return Math.round(s/60)+' min'; return (s/3600%1===0?s/3600:(s/3600).toFixed(1))+' hr'; }
+
+function _applyCacheToggleUI(on){
+  const knob=document.getElementById('cache-knob');
+  const tog=document.getElementById('cache-toggle');
+  const lbl=document.getElementById('cache-toggle-label');
+  const settings=document.getElementById('cache-settings');
+  if(on){
+    knob.style.left='23px'; knob.style.background='#22c55e';
+    tog.style.background='#14432a'; tog.style.borderColor='#22c55e55';
+    lbl.textContent='Enabled';
+  }else{
+    knob.style.left='3px'; knob.style.background='#5a6a8a';
+    tog.style.background='var(--s3)'; tog.style.borderColor='var(--border)';
+    lbl.textContent='Disabled';
+  }
+  if(settings) settings.style.display=on?'block':'none';
+}
+
+function toggleCache(){
+  _cacheOn=!_cacheOn;
+  _applyCacheToggleUI(_cacheOn);
+  addLog('info','Cache mode '+ (_cacheOn?'enabled':'disabled'));
+  onSettingInput();
+}
+
+function _applyTTLInputs(s){
+  let val,unit;
+  if(s%3600===0&&s>=3600){val=s/3600;unit='3600';}
+  else if(s%60===0&&s>=60){val=s/60;unit='60';}
+  else{val=s;unit='1';}
+  document.getElementById('cache-ttl-val').value=val;
+  document.getElementById('cache-ttl-unit').value=unit;
+}
+
+function _updateTTLDisplay(){
+  const v=parseInt(document.getElementById('cache-ttl-val').value)||30;
+  const u=parseInt(document.getElementById('cache-ttl-unit').value)||60;
+  _cacheTTL=v*u;
+  document.getElementById('cache-ttl-display').textContent='= '+_fmtTTL(_cacheTTL);
+}
+
+function onCacheTTLChange(){ _updateTTLDisplay(); onSettingInput(); }
+
+const TEST_PROMPTS=['What is supervised learning?','Explain gradient descent briefly.','What is a neural network?'];
+
+async function runCacheTest(){
+  const btn=document.getElementById('btn-run-test');
+  const out=document.getElementById('cache-test-out');
+  out.style.display='block';
+  btn.disabled=true; btn.textContent='⏳ Testing…';
+  document.getElementById('ctr-rows').innerHTML='';
+  document.getElementById('ctr-avg').textContent='';
+  document.getElementById('ctr-rec').textContent='';
+  document.getElementById('ctr-review').innerHTML='';
+
+  const coldTimes=[],warmTimes=[];
+  let html='';
+
+  for(let i=0;i<TEST_PROMPTS.length;i++){
+    document.getElementById('ctr-status').textContent='Probe '+(i+1)+'/'+TEST_PROMPTS.length+' — cold…';
+    const t0=performance.now();
+    let ok=false, cHdr=null;
+    try{
+      const r=await fetch(API+'/logiik/query',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({query:TEST_PROMPTS[i],top_k:1,min_score:0.0})});
+      ok=r.ok;
+      const ch=r.headers.get('x-cache')||r.headers.get('x-prompt-cache-hit')||'';
+      if(ch) cHdr=/hit|true/i.test(ch);
+    }catch{}
+    const cold=performance.now()-t0;
+    await new Promise(r=>setTimeout(r,200));
+
+    document.getElementById('ctr-status').textContent='Probe '+(i+1)+'/'+TEST_PROMPTS.length+' — warm…';
+    const t1=performance.now();
+    try{
+      const r=await fetch(API+'/logiik/query',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({query:TEST_PROMPTS[i],top_k:1,min_score:0.0})});
+    }catch{}
+    const warm=performance.now()-t1;
+    await new Promise(r=>setTimeout(r,300));
+
+    if(ok){ coldTimes.push(cold); warmTimes.push(warm); }
+    const ratio=warm>0?(cold/warm).toFixed(1):'—';
+    html+=`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--muted);font-size:10.5px">${TEST_PROMPTS[i]}</span>
+      <span style="font-weight:600;font-size:11px">${ok?`cold ${(cold/1000).toFixed(2)}s → warm ${(warm/1000).toFixed(2)}s (${ratio}×)`:'err'}</span>
+    </div>`;
+  }
+  document.getElementById('ctr-rows').innerHTML=html||'<span style="color:var(--red)">No successful probes — is the API running?</span>';
+
+  if(!coldTimes.length){
+    document.getElementById('ctr-status').textContent='All probes failed.';
+    btn.disabled=false; btn.textContent='↻ Retry';
+    return;
+  }
+
+  const coldAvg=coldTimes.reduce((a,b)=>a+b,0)/coldTimes.length;
+  const warmAvg=warmTimes.reduce((a,b)=>a+b,0)/warmTimes.length;
+  const speedup=coldAvg/warmAvg;
+  const coldStd=Math.sqrt(coldTimes.map(t=>(t-coldAvg)**2).reduce((a,b)=>a+b,0)/coldTimes.length);
+  const providerOn=speedup>=1.8;
+  const pWindow=_providerWindow(_mcfg.baseUrl);
+
+  document.getElementById('ctr-status').textContent='Done — '+coldTimes.length+'/'+TEST_PROMPTS.length+' succeeded';
+  document.getElementById('ctr-avg').textContent=
+    'Cold avg '+(coldAvg/1000).toFixed(2)+'s  ·  Warm avg '+(warmAvg/1000).toFixed(2)+'s  ·  Speedup '+speedup.toFixed(1)+'×';
+
+  // Recommendation
+  const coldS=coldAvg/1000, cv=coldStd/coldAvg;
+  let ttl,label,color;
+  if(providerOn){
+    ttl=Math.min(Math.floor(pWindow*0.8), coldS<2?180:Math.round(coldS*20));
+    label='Provider cache detected ('+speedup.toFixed(1)+'×) — capped inside provider window (~'+_fmtTTL(pWindow)+')';
+    color='#22c55e';
+  }else if(coldS<1){ttl=300;label='Fast responses — low cache value';color='#5a6a8a';}
+  else if(coldS<4){ttl=600;label='Moderate latency — 10 min recommended';color='#4f8ef7';}
+  else if(coldS<10){ttl=900;label='Slow responses — 15 min recommended';color='#a855f7';}
+  else if(coldS<25){ttl=1800;label='Very slow — 30 min recommended';color='#f97316';}
+  else{ttl=3600;label='Critical latency — 1 hr minimum';color='#ef4444';}
+  if(cv>0.4) ttl=Math.round(ttl*1.4);
+
+  const recEl=document.getElementById('ctr-rec');
+  recEl.style.borderColor=color; recEl.style.color=color;
+  recEl.textContent='Recommended app TTL: '+_fmtTTL(ttl)+'  —  '+label;
+
+  document.getElementById('ctr-review').innerHTML=`
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);font-weight:700;margin-bottom:10px">Deep Review</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+      <div style="background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:3px">Cold Latency</div>
+        <div style="font-weight:700">${(coldAvg/1000).toFixed(2)} s</div>
+      </div>
+      <div style="background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:3px">Provider Cache</div>
+        <div style="font-weight:700;color:${providerOn?'#22c55e':'#5a6a8a'}">${providerOn?'Detected ('+speedup.toFixed(1)+'×)':'Not detected'}</div>
+      </div>
+      <div style="background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:3px">Safe App TTL</div>
+        <div style="font-weight:700;color:${color}">${_fmtTTL(ttl)}</div>
+      </div>
+    </div>
+    <div style="background:var(--s1);border-left:3px solid ${color};border-radius:0 6px 6px 0;padding:10px 14px;font-size:11.5px;color:var(--dim);margin-bottom:10px">${label}${cv>0.4?' High response variance (CV '+cv.toFixed(2)+') — TTL extended for stability.':''}</div>
+    <button onclick="_applyTTLInputs(${ttl});_updateTTLDisplay();onSettingInput();"
+      style="padding:6px 16px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer">
+      Apply ${_fmtTTL(ttl)} Recommendation
+    </button>`;
+
+  btn.disabled=false; btn.textContent='↻ Re-run';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TRAINING CONTROLS
+// ════════════════════════════════════════════════════════════════════════════
+async function controlTraining(action){
+  const endpoint=action==='start'?'/train/start':'/train/stop';
+  try{
+    await fetch(API+endpoint,{method:'POST'});
+    addLog('info','Training '+(action==='start'?'started':'paused'));
+  }catch(e){ addLog('err','Control failed: '+e.message); }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DOWNLOAD OUTPUT
+// ════════════════════════════════════════════════════════════════════════════
+async function downloadOutput(){
+  try{
+    let report=null;
+    try{ const r=await fetch(API+'/logs/report'); if(r.ok) report=await r.json(); }catch{}
+    let metrics=null;
+    try{ metrics=await api('/logiik/training_metrics'); }catch{}
+    const out={phase:_currentPhase, training_complete:true, metrics, report, exported_at:new Date().toISOString()};
+    const blob=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='logiik-output-'+Date.now()+'.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog('info','Phase output downloaded');
+  }catch(e){ addLog('err','Download failed: '+e.message); }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════════════════════════════════════
+(async()=>{
+  initFirebase();
+  await fbLoadSettings();
+  await initPIN();
+})();
 </script>
 </body>
 </html>
