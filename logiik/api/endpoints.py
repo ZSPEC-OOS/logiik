@@ -69,6 +69,11 @@ _phase_metrics: Dict = {
     "is_complete": False,
     "iteration": 0,
     "last_updated": None,
+    # Phase 12 only — populated when synthetic_judgment phase is active
+    "phase12_brier_score": None,
+    "phase12_abstention_precision": None,
+    "phase12_complete": None,
+    "phase12_n_scenarios": None,
 }
 
 # Training metrics state
@@ -85,6 +90,9 @@ _training_metrics: Dict = {
     "training_active": False,
     "training_complete": False,
     "last_updated": None,
+    # Corpus scale info — set at loop start
+    "corpus_n_chunks": 0,
+    "corpus_scale_factor": 1.0,
 }
 
 # Ingestion stats state
@@ -1041,6 +1049,11 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
         logger.warning("Could not query vector DB for corpus size (%s) — using base track limits", _e)
 
     _track_limits = _compute_track_limits(_n_corpus_chunks)
+    _scale_factor = round(max(1.0, min(10.0, 1.0 + _n_corpus_chunks / 5_000)), 2)
+    _training_metrics.update({
+        "corpus_n_chunks": _n_corpus_chunks,
+        "corpus_scale_factor": _scale_factor,
+    })
 
     # Embedder singleton — lazy-loads SPECTER2 on first embed call.
     _embedder = _get_embedder()
@@ -1273,6 +1286,7 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         )
                         if _is_duplicate_emb(_q_emb, topic_pool_embeddings, threshold=_QA_DEDUP_THRESHOLD):
                             logger.debug("  Skipped semantic duplicate for topic '%s'", topic[:40])
+                            _training_metrics["toss_count"] = _training_metrics.get("toss_count", 0) + 1
                             continue
 
                         used_q_type = q_types[(q_type_idx + i) % len(q_types)]
@@ -1359,7 +1373,7 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                     break  # move to next phase
 
             # Phase complete
-            _phase_metrics.update({
+            _phase_complete_update: Dict = {
                 "phase_id": phase_id, "phase": phase_name,
                 "coverage_ratio": min(saturated_topics / max(topic_count, 1), 1.0),
                 "saturation_score": 1.0,
@@ -1367,7 +1381,13 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                 "is_complete": True,
                 "iteration": total_saved,
                 "last_updated": datetime.utcnow().isoformat(),
-            })
+                # Phase 12 PPO diagnostics — None until Phase10Trainer runs
+                "phase12_brier_score": None,
+                "phase12_abstention_precision": None,
+                "phase12_complete": None,
+                "phase12_n_scenarios": None,
+            }
+            _phase_metrics.update(_phase_complete_update)
             logger.info(
                 "Phase %d (%s) COMPLETE — %d topics saturated, %d Q&As in %s",
                 phase_id, phase_name, saturated_topics, phase_saved, out_path.name,
