@@ -1032,6 +1032,8 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                 raise
 
         raw = (response.choices[0].message.content or "").strip()
+        if not raw:
+            raise ValueError("Empty response from model — will retry")
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -1138,39 +1140,70 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                             topic_saturated = True
                             break
 
-                    # ── Generate one Q&A ──────────────────────────────────
-                    q_type     = q_types[q_type_idx % len(q_types)]
-                    difficulty = round(
+                    # ── Generate a batch concurrently ────────────────────
+                    batch_size  = min(3, phase_max - ex_idx)
+                    difficulty  = round(
                         0.1 + min(ex_idx / max(phase_min * 4, 1), 1.0) * 0.8, 2
                     )
+                    batch_calls = [
+                        _call_teacher(
+                            phase_cfg, topic,
+                            q_types[(q_type_idx + i) % len(q_types)],
+                            difficulty,
+                        )
+                        for i in range(batch_size)
+                    ]
                     try:
-                        data, schema = await _call_teacher(phase_cfg, topic, q_type, difficulty)
+                        results = await asyncio.gather(*batch_calls, return_exceptions=True)
+                    except Exception as e:
+                        err = str(e)
+                        logger.warning("Q&A batch error (topic=%s): %s", topic[:40], err)
+                        await asyncio.sleep(4)
+                        continue
 
+                    batch_saved = 0
+                    for i, result in enumerate(results):
+                        if isinstance(result, Exception):
+                            err = str(result)
+                            logger.warning("Q&A error (topic=%s): %s", topic[:40], err)
+                            _overloaded = (
+                                "429" in err
+                                or "rate_limit" in err.lower()
+                                or "engine_overloaded" in err.lower()
+                                or "overloaded" in err.lower()
+                            )
+                            if _overloaded:
+                                _backoff_key = topic[:40]
+                                _backoff_counts[_backoff_key] = _backoff_counts.get(_backoff_key, 0) + 1
+                                wait = min(120, 15 * (2 ** (_backoff_counts[_backoff_key] - 1)))
+                                await asyncio.sleep(wait)
+                            else:
+                                _backoff_counts.pop(topic[:40], None)
+                            continue
+
+                        _backoff_counts.pop(topic[:40], None)
+                        data, schema = result
                         question = data.get("question", "")
                         if not question:
                             continue
-
-                        # ── Deduplication: skip near-identical questions ───
                         if _is_duplicate(question, topic_pool):
-                            logger.debug(
-                                "  Skipped duplicate question for topic '%s'", topic[:40]
-                            )
+                            logger.debug("  Skipped duplicate for topic '%s'", topic[:40])
                             continue
 
-                        completion = _build_completion(data, schema)
+                        used_q_type = q_types[(q_type_idx + i) % len(q_types)]
+                        completion  = _build_completion(data, schema)
                         record = {
                             "prompt":          question,
                             "completion":      completion,
                             "phase_id":        phase_id,
                             "phase_name":      phase_name,
                             "track":           track,
-                            "question_type":   q_type,
+                            "question_type":   used_q_type,
                             "topic":           topic,
                             "domain":          data.get("domain", topic),
                             "difficulty":      difficulty,
                             "schema":          schema,
                         }
-                        # Preserve MCQ fields when present
                         if schema == "mcq":
                             record["answers"]         = data.get("answers", [])
                             record["correct_indices"] = data.get("correct_indices", [0])
@@ -1179,34 +1212,16 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         _record_id = f"p{phase_id:02d}_{total_saved:06d}"
                         _fb_ok = _fb_store.store_training_record(_record_id, record)
                         if _fb_ok:
-                            logger.info("Firebase synced record %s  [%s]", _record_id, q_type)
+                            logger.info("Firebase synced %s  [%s]", _record_id, used_q_type)
                         else:
-                            logger.warning("Firebase sync FAILED for record %s", _record_id)
+                            logger.warning("Firebase sync FAILED for %s", _record_id)
                         topic_pool.append(question)
-                        q_type_idx += 1
-
+                        batch_saved += 1
                         ex_idx      += 1
                         phase_saved += 1
                         total_saved += 1
 
-                    except Exception as e:
-                        err = str(e)
-                        logger.warning("Q&A error (topic=%s): %s", topic[:40], err)
-                        _overloaded = (
-                            "429" in err
-                            or "rate_limit" in err.lower()
-                            or "engine_overloaded" in err.lower()
-                            or "overloaded" in err.lower()
-                        )
-                        if _overloaded:
-                            _backoff_key = topic[:40]
-                            _backoff_counts[_backoff_key] = _backoff_counts.get(_backoff_key, 0) + 1
-                            wait = min(120, 15 * (2 ** (_backoff_counts[_backoff_key] - 1)))
-                        else:
-                            _backoff_counts.pop(topic[:40], None)
-                            wait = 4
-                        await asyncio.sleep(wait)
-                        continue
+                    q_type_idx += batch_size
 
                     # ── Update live metrics ───────────────────────────────
                     coverage_now = round(saturated_topics / max(topic_count, 1), 4)
