@@ -315,6 +315,29 @@ class TestCurriculum:
         assert "Adversarial Robustness & Epistemic Integrity" in names
         assert "Research Computing & Scientific Coding" in names
 
+    def test_get_phases_by_track(self):
+        from logiik.curriculum.phases import get_phases_by_track
+        foundation = get_phases_by_track("foundation")
+        assert len(foundation) == 2
+        assert all(p.track == "foundation" for p in foundation)
+
+        language = get_phases_by_track("language")
+        assert len(language) == 2
+        assert all(p.track == "language" for p in language)
+
+        domain = get_phases_by_track("domain")
+        assert len(domain) == 3
+
+        execution = get_phases_by_track("execution")
+        assert len(execution) == 2
+
+        integration = get_phases_by_track("integration")
+        assert len(integration) == 2
+
+        capstone = get_phases_by_track("capstone")
+        assert len(capstone) == 1
+        assert capstone[0].name == "synthetic_judgment"
+
 
 # ─── TRAINING (Phase 7) ───────────────────────────────────────────────────────
 
@@ -700,6 +723,28 @@ class TestAPI:
                 f"Pydantic deprecation warning still present: "
                 f"{pydantic_warnings}"
             )
+
+    def test_curriculum_endpoint(self):
+        from logiik.api.endpoints import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        r = client.get("/logiik/curriculum")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["total_phases"] == 12
+        assert "tracks" in d
+        tracks = d["tracks"]
+        assert set(tracks.keys()) == {
+            "foundation","language","domain",
+            "execution","integration","capstone"
+        }
+        assert len(tracks["foundation"]["phases"]) == 2
+        assert len(tracks["language"]["phases"]) == 2
+        assert len(tracks["domain"]["phases"]) == 3
+        assert len(tracks["execution"]["phases"]) == 2
+        assert len(tracks["integration"]["phases"]) == 2
+        assert len(tracks["capstone"]["phases"]) == 1
+        print("Curriculum endpoint: OK")
 
 
 # ─── SESSION MANAGER ─────────────────────────────────────────────────────────

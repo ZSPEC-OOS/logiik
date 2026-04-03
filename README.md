@@ -1,7 +1,7 @@
 # Logiik
 
 Scientific reasoning AI framework. Trains a model through
-10 progressive curriculum phases from memorization to
+12 progressive curriculum phases from memorization to
 synthetic judgment under uncertainty.
 
 ---
@@ -33,18 +33,22 @@ python logiik/main.py --mode session
 
 ## Curriculum Phases
 
-| Phase | Name | Generative Ratio |
-|-------|------|-----------------|
-| 1 | Memorization | 10% |
-| 2 | Generation | 50% |
-| 3 | Abstraction | 80% |
-| 4 | Engineering Execution & Reliability | 85% |
-| 5 | Coding Mastery | 90% |
-| 6 | Scientific Reasoning & Experimental Design | 93% |
-| 7 | Niche Scientific Reasoning | 94% |
-| 8 | Scientific Image Analysis | 94% |
-| 9 | PDF / Textbook Ingestion | 95% |
-| 10 | Synthetic Judgment | 95% |
+| Phase | Track | Name | Gen. Ratio | T-S |
+|-------|-------|------|-----------|-----|
+| 1 | Foundation | Memorization | 10% | |
+| 2 | Foundation | Generation | 50% | |
+| 3 | Language | Scientific Language & Literature | 65% | |
+| 4 | Language | Mathematical & Statistical Reasoning | 70% | |
+| 5 | Domain | Scientific Reasoning & Experimental Design | 88% | |
+| 6 | Domain | Niche & Interdisciplinary Scientific Reasoning | 93% | ✓ |
+| 7 | Domain | Scientific Image & Data Analysis | 93% | |
+| 8 | Execution | Research Computing & Scientific Coding | 92% | |
+| 9 | Execution | Engineering Execution & Reliability | 90% | |
+| 10 | Integration | Abstraction & Cross-Domain Synthesis | 94% | |
+| 11 | Integration | Adversarial Robustness & Epistemic Integrity | 95% | ✓ |
+| 12 | Capstone | Synthetic Judgment (PPO/TRL) | 95% | |
+
+T-S = Teacher-Student iterative feedback loop active.
 
 ---
 
