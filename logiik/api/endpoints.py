@@ -677,10 +677,21 @@ import numpy as _np
 from logiik.embeddings.embed import get_embedder as _get_embedder
 from logiik.utils.helpers import is_duplicate as _is_duplicate_emb, compute_saturation as _compute_saturation_emb
 
-# Cosine similarity threshold for Q&A semantic dedup.
-# 0.85 catches paraphrases; lower than the 0.90 used for PDF chunks
-# since questions are shorter and we want slightly more tolerance.
-_QA_DEDUP_THRESHOLD = 0.85
+# Cosine similarity threshold for Q&A semantic dedup, per track.
+# Short foundation/language questions share sentence structure even when
+# testing different facts (e.g. "What is the role of X?" vs "What is Y?"),
+# so they need a tighter threshold to avoid false-positive dedup.
+# Domain/integration questions are longer and more lexically unique, so
+# a lower threshold catches genuine paraphrases without over-rejecting.
+_QA_DEDUP_THRESHOLD_BY_TRACK: Dict[str, float] = {
+    "foundation":  0.94,  # short MCQ — very high bar to call something a duplicate
+    "language":    0.92,
+    "domain":      0.88,
+    "execution":   0.90,
+    "integration": 0.87,
+    "capstone":    0.85,  # longest, most nuanced questions — lower threshold fine
+}
+_QA_DEDUP_THRESHOLD_DEFAULT = 0.90
 
 
 def _saturation_score_emb(
@@ -1284,7 +1295,8 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         _q_emb = await asyncio.get_event_loop().run_in_executor(
                             None, lambda q=question: _embedder.embed_text(q)
                         )
-                        if _is_duplicate_emb(_q_emb, topic_pool_embeddings, threshold=_QA_DEDUP_THRESHOLD):
+                        _dedup_thresh = _QA_DEDUP_THRESHOLD_BY_TRACK.get(track, _QA_DEDUP_THRESHOLD_DEFAULT)
+                        if _is_duplicate_emb(_q_emb, topic_pool_embeddings, threshold=_dedup_thresh):
                             logger.debug("  Skipped semantic duplicate for topic '%s'", topic[:40])
                             _training_metrics["toss_count"] = _training_metrics.get("toss_count", 0) + 1
                             continue
