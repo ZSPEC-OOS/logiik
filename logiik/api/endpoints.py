@@ -640,113 +640,136 @@ async def query_knowledge(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ─── Training process management ─────────────────────────────────────────────
+# ─── Q&A generation training loop ────────────────────────────────────────────
 
-_cognita_proc: Optional[subprocess.Popen] = None
-_COGNITA_PORT = 8000
+_qa_task: Optional[asyncio.Task] = None
+_qa_stop_flag: bool = False
+_TEACHER_CFG = Path(__file__).parents[2] / "configs" / "teacher_config.yaml"
+
+
+def _load_curriculum_topics() -> list:
+    """Load all topics from teacher_config.yaml nlp_curriculum, flat list."""
+    try:
+        import yaml
+        with open(_TEACHER_CFG) as f:
+            cfg = yaml.safe_load(f)
+        phases = cfg.get("nlp_curriculum", {})
+        topics = []
+        for phase_topics in phases.values():
+            if isinstance(phase_topics, list):
+                topics.extend(phase_topics)
+        return topics
+    except Exception as e:
+        logger.warning("Could not load curriculum topics: %s", e)
+        return ["NLP fundamentals", "language model training", "text classification"]
+
+
+async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
+    """Background task: cycle through curriculum topics generating Q&A pairs."""
+    global _qa_stop_flag, _training_metrics
+
+    import openai as _openai
+    import json as _json
+
+    client = _openai.OpenAI(api_key=api_key, base_url=base_url)
+    topics = _load_curriculum_topics()
+    total = len(topics)
+    examples_done = 0
+    phase_idx = 0
+
+    _training_metrics["training_active"] = True
+    _training_metrics["training_complete"] = False
+    _training_metrics["current_phase"] = topics[0] if topics else "generating"
+    _training_metrics["last_updated"] = datetime.utcnow().isoformat()
+    logger.info("Q&A generation started — %d topics", total)
+
+    try:
+        while not _qa_stop_flag:
+            topic = topics[phase_idx % total]
+            difficulty = min(0.1 + (examples_done / max(total * 3, 1)) * 0.8, 0.9)
+
+            prompt = (
+                f"Generate a training Q&A example about: {topic}\n"
+                f"Difficulty: {difficulty*100:.0f}%\n\n"
+                "Return JSON with keys: question (string), answers (array of 5 strings), "
+                "correct_indices (array of ints), explanation (string), domain (string)."
+            )
+            try:
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(None, lambda: client.chat.completions.create(
+                    model=model_id,
+                    messages=[
+                        {"role": "system", "content": "You are a teacher AI creating training data."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.7,
+                    response_format={"type": "json_object"},
+                    max_tokens=500,
+                ))
+                data = _json.loads(response.choices[0].message.content)
+                examples_done += 1
+                phase_idx += 1
+
+                _training_metrics["examples_processed"] = examples_done
+                _training_metrics["bank_count"] = examples_done
+                _training_metrics["step"] = examples_done
+                _training_metrics["current_phase"] = data.get("domain", topic)
+                _training_metrics["last_updated"] = datetime.utcnow().isoformat()
+                logger.info("Generated Q&A #%d — %s", examples_done, topic[:60])
+
+            except Exception as e:
+                err = str(e)
+                logger.warning("Q&A generation error (topic=%s): %s", topic, err)
+                if "429" in err or "rate_limit" in err.lower():
+                    await asyncio.sleep(10)
+                else:
+                    await asyncio.sleep(3)
+                continue
+
+            await asyncio.sleep(3)  # stay within rate limits
+
+    finally:
+        _training_metrics["training_active"] = False
+        _training_metrics["last_updated"] = datetime.utcnow().isoformat()
+        logger.info("Q&A generation stopped — %d examples generated", examples_done)
 
 
 class TrainingStartRequest(BaseModel):
     api_key: str
     base_url: str
     model_id: str
-    topics_description: str = "NLP and scientific reasoning curriculum"
-    knowledge_base_path: str = "./knowledge_base"
-
-
-def _cognita_url(path: str) -> str:
-    return f"http://localhost:{_COGNITA_PORT}{path}"
-
-
-def _post_json(url: str, payload: dict, timeout: int = 10) -> dict:
-    import requests as _req
-    r = _req.post(url, json=payload, timeout=timeout)
-    r.raise_for_status()
-    return r.json()
-
-
-def _wait_for_cognita(timeout: int = 30) -> bool:
-    import requests as _req
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            _req.get(_cognita_url("/health"), timeout=2)
-            return True
-        except Exception:
-            time.sleep(1)
-    return False
 
 
 @app.post("/train/start")
 async def start_training(req: TrainingStartRequest):
-    """Spawn the cognita training server, initialise it, and start the training loop."""
-    global _cognita_proc
+    """Start the Q&A generation loop in the background."""
+    global _qa_task, _qa_stop_flag
 
-    if _cognita_proc and _cognita_proc.poll() is None:
+    if _qa_task and not _qa_task.done():
         return {"status": "already_running"}
 
-    root = Path(__file__).parents[2]
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(root)
-
-    _cognita_proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "cognita.api.server:app",
-         "--host", "0.0.0.0", "--port", str(_COGNITA_PORT)],
-        cwd=str(root),
-        env=env,
+    _qa_stop_flag = False
+    _qa_task = asyncio.create_task(
+        _qa_generation_loop(req.api_key, req.base_url, req.model_id)
     )
-
-    loop = asyncio.get_event_loop()
-
-    ready = await loop.run_in_executor(None, lambda: _wait_for_cognita(30))
-    if not ready:
-        _cognita_proc.terminate()
-        raise HTTPException(status_code=503, detail="Training server failed to start")
-
-    try:
-        await loop.run_in_executor(None, lambda: _post_json(
-            _cognita_url("/initialize"),
-            {
-                "teacher_api_key": req.api_key,
-                "teacher_base_url": req.base_url,
-                "teacher_model": req.model_id,
-                "topics_description": req.topics_description,
-                "knowledge_base_path": req.knowledge_base_path,
-            },
-            timeout=30,
-        ))
-        await loop.run_in_executor(None, lambda: _post_json(
-            _cognita_url("/train/start"), {}, timeout=10
-        ))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Training init failed: {e}")
-
-    logger.info("Training started via cognita server on port %d", _COGNITA_PORT)
     return {"status": "training_started"}
 
 
 @app.post("/train/stop")
 async def stop_training():
-    """Stop the active training loop and shut down the cognita server."""
-    global _cognita_proc
+    """Stop the Q&A generation loop."""
+    global _qa_task, _qa_stop_flag
 
-    loop = asyncio.get_event_loop()
-    try:
-        await loop.run_in_executor(None, lambda: _post_json(
-            _cognita_url("/train/stop"), {}, timeout=5
-        ))
-    except Exception:
-        pass  # best-effort
-
-    if _cognita_proc and _cognita_proc.poll() is None:
-        _cognita_proc.terminate()
+    _qa_stop_flag = True
+    if _qa_task and not _qa_task.done():
+        _qa_task.cancel()
         try:
-            _cognita_proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            _cognita_proc.kill()
-
-    _cognita_proc = None
-    logger.info("Training stopped")
+            await _qa_task
+        except asyncio.CancelledError:
+            pass
+    _qa_task = None
+    _training_metrics["training_active"] = False
+    logger.info("Training stopped by user")
     return {"status": "training_stopped"}
 
 

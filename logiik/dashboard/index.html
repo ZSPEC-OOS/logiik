@@ -214,11 +214,17 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
     <!-- Training controls -->
     <div style="display:flex;gap:6px;margin-top:10px">
       <button id="btn-start" onclick="controlTraining('start')"
-        style="flex:1;padding:9px 4px;background:#22c55e;color:#000;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.3px;box-shadow:0 2px 8px #22c55e44">
+        style="flex:1;padding:9px 4px;background:#22c55e;color:#000;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.3px;box-shadow:0 2px 8px #22c55e55;transition:transform 0.08s,box-shadow 0.08s,background 0.15s"
+        onmousedown="this.style.transform='scale(0.94)';this.style.boxShadow='0 1px 3px #22c55e33'"
+        onmouseup="this.style.transform='';this.style.boxShadow='0 2px 8px #22c55e55'"
+        onmouseleave="this.style.transform='';this.style.boxShadow='0 2px 8px #22c55e55'">
         ▶ Start
       </button>
       <button id="btn-pause" onclick="controlTraining('pause')"
-        style="flex:1;padding:9px 4px;background:#f97316;color:#000;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.3px;box-shadow:0 2px 8px #f9731644">
+        style="flex:1;padding:9px 4px;background:#f97316;color:#000;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.3px;box-shadow:0 2px 8px #f9731655;transition:transform 0.08s,box-shadow 0.08s,background 0.15s"
+        onmousedown="this.style.transform='scale(0.94)';this.style.boxShadow='0 1px 3px #f9731633'"
+        onmouseup="this.style.transform='';this.style.boxShadow='0 2px 8px #f9731655'"
+        onmouseleave="this.style.transform='';this.style.boxShadow='0 2px 8px #f9731655'">
         ⏸ Pause
       </button>
     </div>
@@ -1342,33 +1348,52 @@ async function runCacheTest(){
 // ════════════════════════════════════════════════════════════════════════════
 // TRAINING CONTROLS
 // ════════════════════════════════════════════════════════════════════════════
+let _trainingActive=false;
+
 async function controlTraining(action){
+  const btnStart=document.getElementById('btn-start');
+  const btnPause=document.getElementById('btn-pause');
+
   if(action==='start'){
     if(!_mcfg.ready||!_mcfg.apiKey||!_mcfg.baseUrl||!_mcfg.modelId){
-      addLog('err','Configure and initialize model in Settings before starting training.');
+      addLog('err','Go to Settings → fill in API Key, Base URL, Model ID → click Initialize Connection first.');
       return;
     }
+    if(_trainingActive){ addLog('info','Already running.'); return; }
+    btnStart.textContent='⏳ Starting…';
+    btnStart.style.background='#16a34a';
+    btnStart.disabled=true;
     try{
       const r=await fetch(API+'/train/start',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          api_key:_mcfg.apiKey,
-          base_url:_mcfg.baseUrl,
-          model_id:_mcfg.modelId,
-          topics_description:'NLP and scientific reasoning curriculum',
-          knowledge_base_path:'./knowledge_base'
-        })
+        body:JSON.stringify({api_key:_mcfg.apiKey,base_url:_mcfg.baseUrl,model_id:_mcfg.modelId})
       });
       const d=await r.json().catch(()=>({}));
-      if(!r.ok) addLog('err','Start failed: '+(d.detail||r.status));
-      else addLog('info','Training started — '+d.status);
-    }catch(e){ addLog('err','Start failed: '+e.message); }
+      if(!r.ok){
+        addLog('err','Start failed: '+(d.detail||r.status));
+        btnStart.textContent='▶ Start'; btnStart.style.background='#22c55e'; btnStart.disabled=false;
+      } else {
+        _trainingActive=true;
+        btnStart.textContent='● Running';
+        btnStart.style.background='#15803d';
+        btnStart.disabled=false;
+        addLog('info','Q&A generation started — teacher model generating curriculum examples');
+      }
+    }catch(e){
+      addLog('err','Start failed: '+e.message);
+      btnStart.textContent='▶ Start'; btnStart.style.background='#22c55e'; btnStart.disabled=false;
+    }
   } else {
+    btnPause.textContent='⏳ Stopping…';
+    btnPause.disabled=true;
     try{
       await fetch(API+'/train/stop',{method:'POST'});
-      addLog('info','Training paused / stopped');
+      _trainingActive=false;
+      btnStart.textContent='▶ Start'; btnStart.style.background='#22c55e';
+      addLog('info','Q&A generation stopped');
     }catch(e){ addLog('err','Stop failed: '+e.message); }
+    btnPause.textContent='⏸ Pause'; btnPause.disabled=false;
   }
 }
 
