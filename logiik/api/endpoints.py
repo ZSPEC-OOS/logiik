@@ -648,33 +648,89 @@ _TEACHER_CFG = Path(__file__).parents[2] / "configs" / "teacher_config.yaml"
 _TRAINING_DATA_DIR = Path(__file__).parents[2] / "knowledge_base" / "training_data"
 
 
+# ── Saturation helpers ────────────────────────────────────────────────────────
+
+def _word_set(text: str) -> set:
+    return set(text.lower().split())
+
+
+def _jaccard(a: set, b: set) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _saturation_score(recent_questions: List[str], pool: List[str]) -> float:
+    """
+    Average of each recent question's max Jaccard similarity against the pool.
+    High score (→1.0) means new questions are very similar to existing ones = saturated.
+    Low score (→0.0) means new questions are novel.
+    """
+    if not pool or not recent_questions:
+        return 0.0
+    pool_sets = [_word_set(q) for q in pool]
+    scores = []
+    for q in recent_questions:
+        q_set = _word_set(q)
+        scores.append(max((_jaccard(q_set, p) for p in pool_sets), default=0.0))
+    return sum(scores) / len(scores)
+
+
+# ── Curriculum + phase config loaders ────────────────────────────────────────
+
 def _load_curriculum_phases() -> tuple:
     """
-    Load nlp_curriculum from teacher_config.yaml.
-    Returns: (phase_list, examples_per_topic)
-      phase_list: [(phase_id, phase_name, [topics]), ...]
-    Phase IDs are assigned in curriculum order starting at 1.
+    Load nlp_curriculum and generation settings from teacher_config.yaml.
+    Returns (phase_list, min_per_topic, max_per_topic, check_interval).
+    phase_list: [(phase_id, phase_name, [topics]), ...]
     """
     try:
         import yaml
         with open(_TEACHER_CFG) as f:
             cfg = yaml.safe_load(f)
         curriculum = cfg.get("nlp_curriculum", {})
-        examples_per_topic = (
-            cfg.get("teacher", {}).get("curriculum", {}).get("examples_per_topic", 20)
-        )
+        cur_cfg = cfg.get("teacher", {}).get("curriculum", {})
+        min_per_topic     = cur_cfg.get("min_examples_per_topic", 50)
+        max_per_topic     = cur_cfg.get("max_examples_per_topic", 500)
+        check_interval    = cur_cfg.get("saturation_check_interval", 20)
         phase_list = [
             (idx + 1, name, topics)
             for idx, (name, topics) in enumerate(curriculum.items())
             if isinstance(topics, list)
         ]
-        return phase_list, examples_per_topic
+        return phase_list, min_per_topic, max_per_topic, check_interval
     except Exception as e:
         logger.warning("Could not load curriculum: %s", e)
-        return [(1, "nlp_fundamentals", ["language model training"])], 20
+        return [(1, "nlp_fundamentals", ["language model training"])], 50, 500, 20
 
 
-def _jsonl_path(phase_id: int, phase_name: str) -> Path:
+def _load_phase_criteria() -> dict:
+    """
+    Load completion_criteria from phases.py keyed by phase name.
+    Falls back to safe defaults if import fails.
+    """
+    defaults = {"coverage_ratio": 0.95, "saturation_score": 0.90}
+    try:
+        from logiik.curriculum.phases import PHASES
+        return {p.name: p.completion_criteria for p in PHASES}
+    except Exception as e:
+        logger.warning("Could not load phase configs: %s", e)
+        return {}
+
+
+def _match_phase_criteria(phase_name: str, criteria_map: dict) -> dict:
+    """Find completion criteria for a phase name, with fuzzy fallback."""
+    if phase_name in criteria_map:
+        return criteria_map[phase_name]
+    # fuzzy: find the phase whose name overlaps most with ours
+    clean = phase_name.lower().replace(" ", "_").replace("&", "and")
+    for key in criteria_map:
+        if key in clean or clean in key:
+            return criteria_map[key]
+    return {"coverage_ratio": 0.95, "saturation_score": 0.90}
+
+
+def _jsonl_path(phase_id: int, phase_name: str) -> Path:  # noqa: E302
     """Return the JSONL file path for a phase (sft_trainer naming convention)."""
     _TRAINING_DATA_DIR.mkdir(parents=True, exist_ok=True)
     return _TRAINING_DATA_DIR / f"phase_{phase_id:02d}_{phase_name}.jsonl"
@@ -697,14 +753,19 @@ def _count_existing(path: Path) -> int:
 
 async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
     """
-    Background task: work through every curriculum phase → every topic →
-    generate `examples_per_topic` Q&A pairs and SAVE each one to a JSONL
-    file immediately.  Files are named phase_01_memorization.jsonl etc.
-    and are ready to pass straight to sft_trainer.py when GPU training starts.
+    Self-determining Q&A generation loop.
 
-    Phase advances ONLY when every topic in it has its full quota saved.
-    Pausing mid-phase is safe — on restart the loop resumes from where it
-    left off by counting lines already written.
+    For each phase → each topic:
+      - Generates questions continuously, saving each to JSONL on disk
+      - After min_examples_per_topic, checks saturation every check_interval
+      - Saturation = average max-Jaccard of recent questions vs. the full pool
+      - Topic is done when saturation >= phase threshold OR count >= max cap
+    Phase advances when coverage_ratio of saturated topics >= phase threshold.
+    All thresholds come from phases.py completion_criteria — no hardcoding.
+
+    Files: knowledge_base/training_data/phase_01_memorization.jsonl etc.
+    Resume-safe: counts existing lines, reloads questions from disk to continue
+    saturation tracking where it left off.
     """
     global _qa_stop_flag, _training_metrics, _phase_metrics
 
@@ -712,31 +773,28 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
     import json as _json
 
     client = _openai.OpenAI(api_key=api_key, base_url=base_url)
-    phases, examples_per_topic = _load_curriculum_phases()
+    phases, min_per_topic, max_per_topic, check_interval = _load_curriculum_phases()
+    criteria_map = _load_phase_criteria()
     total_phases = len(phases)
 
-    # Count total examples already on disk across all phases (resume support)
     total_saved = sum(
         _count_existing(_jsonl_path(pid, pname))
         for pid, pname, _ in phases
     )
 
     _training_metrics.update({
-        "training_active": True,
-        "training_complete": False,
-        "examples_processed": total_saved,
-        "bank_count": total_saved,
+        "training_active": True, "training_complete": False,
+        "examples_processed": total_saved, "bank_count": total_saved,
         "step": total_saved,
         "current_phase": phases[0][1] if phases else "generating",
         "last_updated": datetime.utcnow().isoformat(),
     })
     logger.info(
-        "Q&A generation started — %d phases, %d Q&As per topic, %d already saved",
-        total_phases, examples_per_topic, total_saved,
+        "Q&A generation started — %d phases | min %d / max %d per topic | %d already on disk",
+        total_phases, min_per_topic, max_per_topic, total_saved,
     )
 
     async def _call_teacher(topic: str, difficulty: float) -> dict:
-        """Call teacher model, return parsed dict with question/answers/explanation."""
         prompt = (
             f"Generate a training Q&A example about: {topic}\n"
             f"Difficulty: {difficulty * 100:.0f}%\n\n"
@@ -758,174 +816,216 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
             max_tokens=1500,
         ))
         raw = (response.choices[0].message.content or "").strip()
-        # Strip markdown code fences if the model adds them despite instructions
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
         return _json.loads(raw.strip())
 
+    def _read_questions_from_disk(path: Path) -> List[str]:
+        """Reload question texts already saved (for saturation tracking on resume)."""
+        if not path.exists():
+            return []
+        questions = []
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        questions.append(_json.loads(line).get("prompt", ""))
+                    except Exception:
+                        pass
+        return questions
+
     try:
         for phase_id, phase_name, topics in phases:
             if _qa_stop_flag:
                 break
 
-            out_path = _jsonl_path(phase_id, phase_name)
-            topic_count = len(topics)
-            # Total Q&As required for this phase to be complete
-            phase_quota = topic_count * examples_per_topic
-            already_saved = _count_existing(out_path)
+            criteria = _match_phase_criteria(phase_name, criteria_map)
+            phase_coverage_threshold  = criteria.get("coverage_ratio", 0.95)
+            phase_sat_threshold       = criteria.get("saturation_score", 0.90)
+            max_iter                  = criteria.get("max_iterations", None)
 
-            if already_saved >= phase_quota:
-                logger.info(
-                    "Phase %d (%s) already complete — %d/%d Q&As on disk, skipping",
-                    phase_id, phase_name, already_saved, phase_quota,
-                )
-                _phase_metrics.update({
-                    "phase_id": phase_id, "phase": phase_name,
-                    "coverage_ratio": 1.0, "saturation_score": 1.0,
-                    "covered_prompts": topic_count, "total_prompts": topic_count,
-                    "is_complete": True,
-                    "iteration": already_saved,
-                    "last_updated": datetime.utcnow().isoformat(),
-                })
-                _training_metrics["current_phase"] = phase_name
-                continue
+            out_path   = _jsonl_path(phase_id, phase_name)
+            topic_count = len(topics)
+            phase_saved = _count_existing(out_path)
 
             logger.info(
-                "Phase %d/%d: %s — %d topics × %d Q&As = %d total  (%d already saved)",
-                phase_id, total_phases, phase_name,
-                topic_count, examples_per_topic, phase_quota, already_saved,
+                "Phase %d/%d: %s | %d topics | coverage≥%.0f%% sat≥%.0f%% | %d on disk",
+                phase_id, total_phases, phase_name, topic_count,
+                phase_coverage_threshold * 100, phase_sat_threshold * 100, phase_saved,
             )
             _training_metrics["current_phase"] = phase_name
 
-            phase_saved = already_saved  # track within this phase run
-            topics_completed = already_saved // examples_per_topic
+            # Re-read existing questions per topic for saturation continuity on resume
+            all_disk_questions = _read_questions_from_disk(out_path)
+
+            saturated_topics = 0
+            topics_per_q_count: List[int] = []  # examples generated per topic
 
             for t_idx, topic in enumerate(topics):
                 if _qa_stop_flag:
                     break
 
-                # How many examples for this topic are already saved?
-                topic_offset = t_idx * examples_per_topic
-                topic_already = max(0, min(already_saved - topic_offset, examples_per_topic))
+                # Estimate how many examples are already on disk for this topic
+                # (approximate — stored sequentially, so divide equally)
+                approx_topic_saved = min(
+                    len(all_disk_questions[t_idx * min_per_topic:(t_idx + 1) * min_per_topic]),
+                    phase_saved,
+                )
+                # Rebuild per-topic question pool from disk slice
+                slice_start = sum(topics_per_q_count) if topics_per_q_count else 0
+                topic_pool: List[str] = all_disk_questions[slice_start:]
 
-                if topic_already >= examples_per_topic:
-                    topics_completed = t_idx + 1
-                    continue  # topic fully done — skip
+                count_this_topic = len(topic_pool)
+                topic_saturated  = False
+                current_sat      = 0.0
 
-                examples_this_topic = topic_already
+                logger.info(
+                    "  Topic %d/%d: %s  (%d on disk)",
+                    t_idx + 1, topic_count, topic[:55], count_this_topic,
+                )
 
-                for ex_idx in range(topic_already, examples_per_topic):
-                    if _qa_stop_flag:
+                ex_idx = count_this_topic  # continue from where we left off
+
+                while not _qa_stop_flag:
+                    # ── Hard cap ──────────────────────────────────────────
+                    if ex_idx >= max_per_topic:
+                        logger.info(
+                            "  Topic '%s' hit max cap (%d) — moving on", topic[:40], max_per_topic
+                        )
+                        topic_saturated = True
                         break
 
+                    # ── Saturation check (after minimum floor) ────────────
+                    if ex_idx >= min_per_topic and ex_idx % check_interval == 0:
+                        recent = topic_pool[-check_interval:]
+                        prior  = topic_pool[:-check_interval]
+                        current_sat = _saturation_score(recent, prior) if prior else 0.0
+                        logger.info(
+                            "  Saturation check — topic '%s': %.3f (threshold %.2f) @ %d examples",
+                            topic[:40], current_sat, phase_sat_threshold, ex_idx,
+                        )
+                        if current_sat >= phase_sat_threshold:
+                            logger.info(
+                                "  Topic '%s' SATURATED at %d examples (sat=%.3f)",
+                                topic[:40], ex_idx, current_sat,
+                            )
+                            topic_saturated = True
+                            break
+
+                    # ── Generate one Q&A ──────────────────────────────────
                     difficulty = round(
-                        0.1 + (ex_idx / max(examples_per_topic - 1, 1)) * 0.8, 2
+                        0.1 + min(ex_idx / max(min_per_topic * 4, 1), 1.0) * 0.8, 2
                     )
                     try:
                         data = await _call_teacher(topic, difficulty)
 
-                        # Build correct-answer text for the completion field
-                        answers = data.get("answers", [])
+                        answers      = data.get("answers", [])
                         correct_idxs = data.get("correct_indices", [0])
-                        correct_answers = [
-                            answers[i] for i in correct_idxs if i < len(answers)
-                        ]
-                        completion_text = (
-                            "\n".join(correct_answers)
+                        correct_text = [answers[i] for i in correct_idxs if i < len(answers)]
+                        completion   = (
+                            "\n".join(correct_text)
                             + "\n\nExplanation: " + data.get("explanation", "")
                         )
-
-                        # Write sft_trainer-compatible record to disk immediately
                         record = {
-                            "prompt": data["question"],
-                            "completion": completion_text,
-                            "phase_id": phase_id,
-                            "phase_name": phase_name,
-                            "topic": topic,
-                            "domain": data.get("domain", topic),
-                            "difficulty": difficulty,
-                            "answers": answers,
+                            "prompt":          data["question"],
+                            "completion":      completion,
+                            "phase_id":        phase_id,
+                            "phase_name":      phase_name,
+                            "topic":           topic,
+                            "domain":          data.get("domain", topic),
+                            "difficulty":      difficulty,
+                            "answers":         answers,
                             "correct_indices": correct_idxs,
                         }
                         _append_record(out_path, record)
+                        topic_pool.append(data["question"])
 
-                        examples_this_topic += 1
+                        ex_idx      += 1
                         phase_saved += 1
                         total_saved += 1
 
                     except Exception as e:
                         err = str(e)
-                        logger.warning(
-                            "Q&A error (phase=%s topic=%s ex=%d): %s",
-                            phase_name, topic[:40], ex_idx, err,
-                        )
+                        logger.warning("Q&A error (topic=%s): %s", topic[:40], err)
                         wait = 15 if ("429" in err or "rate_limit" in err.lower()) else 4
                         await asyncio.sleep(wait)
                         continue
 
-                    # Coverage = fully-completed topics / total topics
-                    # Saturation = progress through the current topic
-                    topic_coverage = round(topics_completed / max(topic_count, 1), 4)
-                    topic_saturation = round(
-                        examples_this_topic / max(examples_per_topic, 1), 4
-                    )
+                    # ── Update live metrics ───────────────────────────────
+                    coverage_now = round(saturated_topics / max(topic_count, 1), 4)
+                    sat_now      = round(current_sat, 4)
                     _phase_metrics.update({
-                        "phase_id": phase_id,
-                        "phase": phase_name,
-                        "coverage_ratio": topic_coverage,
-                        "saturation_score": topic_saturation,
-                        "covered_prompts": topics_completed,
-                        "total_prompts": topic_count,
-                        "is_complete": False,
-                        "iteration": total_saved,
-                        "last_updated": datetime.utcnow().isoformat(),
+                        "phase_id":        phase_id,
+                        "phase":           phase_name,
+                        "coverage_ratio":  coverage_now,
+                        "saturation_score": sat_now,
+                        "covered_prompts": saturated_topics,
+                        "total_prompts":   topic_count,
+                        "is_complete":     False,
+                        "iteration":       total_saved,
+                        "last_updated":    datetime.utcnow().isoformat(),
                     })
                     _training_metrics.update({
                         "examples_processed": total_saved,
-                        "bank_count": total_saved,
-                        "step": total_saved,
-                        "current_phase": phase_name,
-                        "last_updated": datetime.utcnow().isoformat(),
+                        "bank_count":         total_saved,
+                        "step":               total_saved,
+                        "current_phase":      phase_name,
+                        "last_updated":       datetime.utcnow().isoformat(),
                     })
                     logger.info(
-                        "SAVED Q&A #%d → %s  [phase %d/%d | topic %d/%d | ex %d/%d]  %s",
-                        total_saved, out_path.name,
-                        phase_id, total_phases,
-                        t_idx + 1, topic_count,
-                        examples_this_topic, examples_per_topic,
-                        topic[:40],
+                        "SAVED #%d  phase=%d/%d  topic=%d/%d  ex=%d  sat=%.3f  %s",
+                        total_saved, phase_id, total_phases,
+                        t_idx + 1, topic_count, ex_idx, current_sat, topic[:40],
                     )
                     await asyncio.sleep(3)
 
-                topics_completed += 1
+                    # ── Phase-level max_iterations guard ─────────────────
+                    if max_iter and total_saved >= max_iter:
+                        logger.info(
+                            "Phase %d hit max_iterations (%d) — advancing", phase_id, max_iter
+                        )
+                        _qa_stop_flag = False  # don't stop entirely, just break inner
+                        break
 
-            # Phase fully complete
+                topics_per_q_count.append(ex_idx)
+                if topic_saturated:
+                    saturated_topics += 1
+
+                # ── Check phase coverage threshold ────────────────────────
+                coverage_ratio = saturated_topics / max(topic_count, 1)
+                if coverage_ratio >= phase_coverage_threshold:
+                    logger.info(
+                        "Phase %d (%s) coverage threshold met (%.1f%%) — advancing",
+                        phase_id, phase_name, coverage_ratio * 100,
+                    )
+                    break  # move to next phase
+
+            # Phase complete
             _phase_metrics.update({
                 "phase_id": phase_id, "phase": phase_name,
-                "coverage_ratio": 1.0, "saturation_score": 1.0,
-                "covered_prompts": topic_count, "total_prompts": topic_count,
+                "coverage_ratio": min(saturated_topics / max(topic_count, 1), 1.0),
+                "saturation_score": 1.0,
+                "covered_prompts": saturated_topics, "total_prompts": topic_count,
                 "is_complete": True,
                 "iteration": total_saved,
                 "last_updated": datetime.utcnow().isoformat(),
             })
             logger.info(
-                "Phase %d (%s) COMPLETE — %d Q&As saved to %s",
-                phase_id, phase_name, phase_saved, out_path,
+                "Phase %d (%s) COMPLETE — %d topics saturated, %d Q&As in %s",
+                phase_id, phase_name, saturated_topics, phase_saved, out_path.name,
             )
 
         if not _qa_stop_flag:
             _training_metrics["training_complete"] = True
-            logger.info(
-                "ALL PHASES COMPLETE — %d Q&As saved to %s",
-                total_saved, _TRAINING_DATA_DIR,
-            )
+            logger.info("ALL PHASES COMPLETE — %d total Q&As in %s", total_saved, _TRAINING_DATA_DIR)
 
     finally:
         _training_metrics["training_active"] = False
         _training_metrics["last_updated"] = datetime.utcnow().isoformat()
-        logger.info("Generation stopped — %d total Q&As on disk", total_saved)
+        logger.info("Generation stopped — %d Q&As on disk", total_saved)
 
 
 class TrainingStartRequest(BaseModel):

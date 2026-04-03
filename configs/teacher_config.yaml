@@ -12,7 +12,9 @@ teacher:
     response_format: "json"
   curriculum:
     topics_per_session: 1
-    examples_per_topic: 20
+    min_examples_per_topic: 50    # minimum before saturation can trigger
+    max_examples_per_topic: 500   # hard cap per topic regardless of saturation
+    saturation_check_interval: 20 # check saturation every N examples per topic
     difficulty_range: [0.1, 0.9]
   evaluation:
     criteria:
