@@ -1297,7 +1297,15 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         )
                         _dedup_thresh = _QA_DEDUP_THRESHOLD_BY_TRACK.get(track, _QA_DEDUP_THRESHOLD_DEFAULT)
                         if _is_duplicate_emb(_q_emb, topic_pool_embeddings, threshold=_dedup_thresh):
-                            logger.debug("  Skipped semantic duplicate for topic '%s'", topic[:40])
+                            _max_sim = max(
+                                (float(1 - __import__('scipy.spatial.distance', fromlist=['cosine']).cosine(_q_emb, e))
+                                 for e in topic_pool_embeddings),
+                                default=0.0,
+                            )
+                            logger.info(
+                                "  Dedup toss — topic '%s' max_sim=%.4f threshold=%.2f",
+                                topic[:40], _max_sim, _dedup_thresh,
+                            )
                             _training_metrics["toss_count"] = _training_metrics.get("toss_count", 0) + 1
                             continue
 
