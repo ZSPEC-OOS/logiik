@@ -5,12 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NERO — Control Panel</title>
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <!-- Firebase compat SDK (v10) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=MuseoModerno:wght@900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+
+  <!-- ── PIN Lock Screen ──────────────────────────────────────── -->
+  <div id="pin-screen" class="pin-screen">
+    <div class="pin-card">
+      <div class="pin-logo">NERO</div>
+      <h2>Access Required</h2>
+      <p class="muted" style="font-size:.85rem;">Enter your PIN to access the control panel.</p>
+      <input type="password" id="pin-input" class="pin-input" maxlength="8"
+             placeholder="••••" autocomplete="off"
+             onkeydown="if(event.key==='Enter') verifyPIN()" />
+      <button class="btn btn-primary" onclick="verifyPIN()">Unlock</button>
+      <div id="pin-error" class="pin-error" style="visibility:hidden;">Incorrect PIN. Please try again.</div>
+    </div>
+  </div>
+
   <div class="layout">
 
     <!-- ── Sidebar ─────────────────────────────────────────── -->
@@ -27,8 +45,8 @@
 
       <section class="sidebar-section">
         <h3>Training</h3>
-        <button id="btn-start" class="btn btn-green" onclick="startTraining()" disabled>▶ Start Training</button>
-        <button id="btn-stop"  class="btn btn-red"   onclick="stopTraining()"  disabled>⏹ Stop Training</button>
+        <button id="btn-start" class="btn btn-green"  onclick="startTraining()" disabled>▶ Start</button>
+        <button id="btn-stop"  class="btn btn-orange" onclick="pauseTraining()" disabled>⏸ Pause</button>
       </section>
 
       <section class="sidebar-section">
@@ -219,6 +237,10 @@
                 onclick="showTab('logs', document.querySelector('[data-tab=logs]'))">
           View Final Report
         </button>
+        <button id="btn-download" class="btn btn-sm btn-download" style="margin-left:.5rem; display:none;"
+                onclick="downloadPhaseOutput()">
+          ⬇ Download Output
+        </button>
       </div>
 
       <!-- Tabs -->
@@ -233,25 +255,54 @@
 
       <!-- ── Tab: Setup ──────────────────────────────────── -->
       <div id="tab-setup" class="tab-panel active">
-        <div class="card">
-          <h2>Initialize NERO System</h2>
-          <p class="muted" style="margin-bottom:1.5rem; font-size:.85rem;">
-            Configure the Kimi K2.5 teacher connection and training parameters, then click Initialize.
+
+        <!-- AI Model Configuration card -->
+        <div class="card" style="margin-bottom:1.25rem;">
+          <h2>AI Model Configuration</h2>
+          <p class="muted" style="margin-bottom:1.25rem; font-size:.85rem;">
+            Configure the teacher AI connection. Stored locally and used for all subsequent API calls.
           </p>
 
           <div class="form-grid">
             <div class="form-group">
-              <label>Teacher API Key <span class="req">*</span></label>
-              <input id="f-apikey" type="password" placeholder="sk-…" autocomplete="off" />
+              <label>API Key <span class="req">*</span></label>
+              <input id="mc-apikey" type="password" placeholder="sk-…" autocomplete="off" />
             </div>
             <div class="form-group">
-              <label>Teacher Base URL <span class="req">*</span></label>
-              <input id="f-baseurl" type="text" placeholder="https://api.moonshot.cn/v1" />
+              <label>Base URL <span class="req">*</span></label>
+              <input id="mc-baseurl" type="text" placeholder="https://api.moonshot.cn/v1" />
             </div>
             <div class="form-group">
               <label>Model ID <span class="req">*</span></label>
-              <input id="f-model" type="text" placeholder="kimi-k2-5" />
+              <input id="mc-model" type="text" placeholder="kimi-k2-5" />
             </div>
+            <div class="form-group" style="justify-content:flex-end;">
+              <div class="mc-status">
+                <span id="mc-dot" class="mc-dot"></span>
+                <span id="mc-status-text">Not configured</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:1.25rem; display:flex; gap:.75rem; align-items:center;">
+            <button class="btn btn-primary btn-wide" onclick="initModelConfig()">⚡ Initialize</button>
+            <span id="mc-msg" class="init-msg"></span>
+          </div>
+        </div>
+
+        <!-- Training Configuration card -->
+        <div class="card">
+          <h2>Training Configuration</h2>
+          <p class="muted" style="margin-bottom:1.5rem; font-size:.85rem;">
+            Set training parameters, then click Initialize System to begin.
+          </p>
+
+          <!-- Hidden fields kept for backend compatibility — auto-populated from modelConfig -->
+          <input id="f-apikey"  type="hidden" />
+          <input id="f-baseurl" type="hidden" />
+          <input id="f-model"   type="hidden" />
+
+          <div class="form-grid">
             <div class="form-group">
               <label>Knowledge Base Folder
                 <span class="hint">— where NERO stores all learned data locally</span>
@@ -280,7 +331,7 @@
             <div class="form-group form-group-full">
               <div class="firebase-badge">
                 <span class="firebase-dot"></span>
-                Firebase sync active — knowledge metadata auto-synced to cloud
+                Firebase sync active — Q&amp;A and phase data auto-synced to cloud
               </div>
             </div>
           </div>
