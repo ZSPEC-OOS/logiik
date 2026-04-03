@@ -53,6 +53,107 @@ function _scheduleFirestoreWrite() {
   }, 2000);
 }
 
+/* ── Settings persistence ── */
+let _settingsWriteTimer = null;
+
+function _scheduleSettingsSave() {
+  if (!db) return;
+  clearTimeout(_settingsWriteTimer);
+  _settingsWriteTimer = setTimeout(_saveSettingsToFirestore, 1500);
+}
+
+async function _saveSettingsToFirestore() {
+  if (!db) return;
+  try {
+    await db.collection('app_config').doc('settings').set({
+      modelApiKey:     modelConfig.apiKey,
+      modelBaseUrl:    modelConfig.baseUrl,
+      modelId:         modelConfig.modelId,
+      cacheEnabled:    cacheConfig.enabled,
+      cacheTtlSeconds: cacheConfig.ttlSeconds,
+      kbPath:          document.getElementById('f-kbpath')?.value    || '',
+      threshold:       document.getElementById('f-threshold')?.value || 75,
+      topics:          document.getElementById('f-topics')?.value    || '',
+      updatedAt:       firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (_) {}
+}
+
+async function _loadSettingsFromFirestore() {
+  if (!db) return;
+  try {
+    const snap = await db.collection('app_config').doc('settings').get();
+    if (!snap.exists) return;
+    const d = snap.data();
+
+    // Model config
+    if (d.modelApiKey)  { modelConfig.apiKey  = d.modelApiKey;  localStorage.setItem('nero-mc-apikey',  d.modelApiKey);  const el = document.getElementById('mc-apikey');  if (el) el.value = d.modelApiKey;  }
+    if (d.modelBaseUrl) { modelConfig.baseUrl = d.modelBaseUrl; localStorage.setItem('nero-mc-baseurl', d.modelBaseUrl); const el = document.getElementById('mc-baseurl'); if (el) el.value = d.modelBaseUrl; }
+    if (d.modelId)      { modelConfig.modelId = d.modelId;      localStorage.setItem('nero-mc-model',   d.modelId);      const el = document.getElementById('mc-model');   if (el) el.value = d.modelId;      }
+    if (d.modelApiKey && d.modelBaseUrl && d.modelId) {
+      modelConfig.initialized = true;
+      _syncModelConfigToLegacy();
+      _setMCStatus(true, d.modelId);
+    }
+
+    // Cache config
+    if (d.cacheEnabled !== undefined) {
+      cacheConfig.enabled = !!d.cacheEnabled;
+      const cb = document.getElementById('cache-enabled');
+      if (cb) cb.checked = cacheConfig.enabled;
+      onCacheToggle(cacheConfig.enabled, /*silent*/ true);
+    }
+    if (d.cacheTtlSeconds) {
+      cacheConfig.ttlSeconds = d.cacheTtlSeconds;
+      _applyTTLToInputs(d.cacheTtlSeconds);
+      updateCacheTTLDisplay();
+    }
+
+    // Training config
+    if (d.kbPath)    { const el = document.getElementById('f-kbpath');    if (el) el.value = d.kbPath;    localStorage.setItem('nero-f-kbpath',    d.kbPath);    }
+    if (d.threshold) { const el = document.getElementById('f-threshold');  if (el) el.value = d.threshold; localStorage.setItem('nero-f-threshold',  String(d.threshold)); }
+    if (d.topics)    { const el = document.getElementById('f-topics');     if (el) el.value = d.topics;    localStorage.setItem('nero-f-topics',     d.topics);    }
+
+    addLog('system', 'Settings restored from Firestore');
+  } catch (e) { console.warn('_loadSettingsFromFirestore:', e); }
+}
+
+/* ── Question bank → Firestore ── */
+let _lastSavedQCount = 0;
+let _qbSyncTimer     = null;
+
+function _scheduleQBankSync(step) {
+  clearTimeout(_qbSyncTimer);
+  _qbSyncTimer = setTimeout(() => _syncQBankToFirestore(step), 3000);
+}
+
+async function _syncQBankToFirestore(step) {
+  if (!db) return;
+  try {
+    const res = await fetch(`${API}/logs/question-bank`);
+    if (!res.ok) return;
+    const data    = await res.json();
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    const newOnes = entries.slice(_lastSavedQCount);
+    if (newOnes.length === 0) return;
+
+    const batch = db.batch();
+    newOnes.forEach(e => {
+      const ref = db.collection('question_bank').doc(String(e.id));
+      batch.set(ref, {
+        question_id: e.id,
+        question:    e.question,
+        step:        step ?? null,
+        timestamp:   e.timestamp
+          ? new Date(e.timestamp * 1000)
+          : firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    _lastSavedQCount = entries.length;
+  } catch (_) {}
+}
+
 async function _restoreFromFirestore() {
   if (!db) return;
   try {
@@ -190,6 +291,7 @@ async function initModelConfig() {
   localStorage.setItem('nero-mc-model',   modelId);
 
   _syncModelConfigToLegacy();
+  _scheduleSettingsSave();
 
   try {
     const res = await fetch(`${API}/health`);
@@ -339,7 +441,10 @@ function onCacheToggle(enabled, silent = false) {
   if (settings)     settings.style.display     = enabled ? 'block' : 'none';
   if (disabledHint) disabledHint.style.display  = enabled ? 'none'  : 'block';
 
-  if (!silent) addLog('system', `Cache mode ${enabled ? 'enabled' : 'disabled'}`);
+  if (!silent) {
+    addLog('system', `Cache mode ${enabled ? 'enabled' : 'disabled'}`);
+    _scheduleSettingsSave();
+  }
 }
 
 function updateCacheTTLDisplay() {
@@ -348,6 +453,7 @@ function updateCacheTTLDisplay() {
   const totalS = val * unit;
   cacheConfig.ttlSeconds = totalS;
   localStorage.setItem('nero-cache-ttl', totalS);
+  _scheduleSettingsSave();
 
   const el = document.getElementById('cache-ttl-display');
   if (el) el.textContent = `= ${_fmtTTL(totalS)}`;
@@ -491,16 +597,23 @@ async function runCacheTimingTest() {
 const PROVIDER_CACHE_WINDOWS = {
   openai:    300,   // ~5 min (prompt caching, 1024-token min)
   anthropic: 300,   // 5 min ephemeral / up to 60 min extended
-  moonshot:  600,   // Kimi context cache: 10 min default observed
-  generic:   240,   // safe floor when provider is unknown: 4 min
+  moonshot:  600,   // Kimi/Moonshot context cache: ~10 min observed
+  grok:      300,   // xAI Grok: ~5 min, eviction-based best-effort
+                    // ↳ send x-grok-conv-id header to pin to one backend server
+  generic:   240,   // unknown provider: 4 min safe floor
 };
+
+// Note: Grok caching is automatic (no flag needed) but eviction is not
+// guaranteed. Use x-grok-conv-id: <constant UUID4> per session to
+// maximise hit rate (documented at docs.x.ai/developers/advanced-api-usage).
 
 function _detectProviderWindow(baseUrl) {
   if (!baseUrl) return PROVIDER_CACHE_WINDOWS.generic;
   const u = baseUrl.toLowerCase();
-  if (u.includes('openai.com'))    return PROVIDER_CACHE_WINDOWS.openai;
-  if (u.includes('anthropic.com')) return PROVIDER_CACHE_WINDOWS.anthropic;
-  if (u.includes('moonshot'))      return PROVIDER_CACHE_WINDOWS.moonshot;
+  if (u.includes('openai.com'))          return PROVIDER_CACHE_WINDOWS.openai;
+  if (u.includes('anthropic.com'))       return PROVIDER_CACHE_WINDOWS.anthropic;
+  if (u.includes('moonshot') || u.includes('kimi')) return PROVIDER_CACHE_WINDOWS.moonshot;
+  if (u.includes('x.ai') || u.includes('grok'))     return PROVIDER_CACHE_WINDOWS.grok;
   return PROVIDER_CACHE_WINDOWS.generic;
 }
 
@@ -685,6 +798,7 @@ async function initializeSystem() {
     document.getElementById('btn-stop').disabled      = false;
 
     setStatus('Ready', 'idle');
+    _scheduleSettingsSave(); // persist training config to Firestore on init
     await loadTrainingHistory();
     refreshMetrics();
   } catch (e) {
@@ -949,10 +1063,11 @@ function connectWS() {
       _writePhaseEvent(m.phase, m.step);
     }
 
-    // Q&A bank events — write snapshot whenever bank_count changes
+    // Q&A bank events — write count snapshot + sync actual question text
     if (m.bank_count != null && m.bank_count !== state._lastBankCount) {
       state._lastBankCount = m.bank_count;
       _writeQAEvent(m.bank_count, m.step);
+      _scheduleQBankSync(m.step); // fetch + save new question text to Firestore
     }
 
     // Metric cards
@@ -1343,11 +1458,16 @@ function initTheme() {
 
   // 5. Restore richer state from Firestore (overwrites localStorage if more data exists)
   await _restoreFromFirestore();
+  // 5b. Restore all settings from Firestore (model config, cache, training fields)
+  await _loadSettingsFromFirestore();
 
-  // 6. Auto-save training form fields to localStorage
+  // 6. Auto-save training form fields to localStorage + Firestore
   ['f-kbpath', 'f-threshold', 'f-topics'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('input', () => localStorage.setItem('nero-' + id, el.value));
+    if (el) el.addEventListener('input', () => {
+      localStorage.setItem('nero-' + id, el.value);
+      _scheduleSettingsSave();
+    });
   });
 
   // 7. Auto-save model config fields to localStorage + state as user types
