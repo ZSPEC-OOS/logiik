@@ -196,6 +196,7 @@
 
 <nav>
   <button class="active" onclick="showTab('phase', this)">Phase Monitor</button>
+  <button onclick="showTab('curriculum', this)">Curriculum</button>
   <button onclick="showTab('training', this)">Training</button>
   <button onclick="showTab('knowledge', this)">Knowledge Base</button>
   <button onclick="showTab('gpu', this)">GPU</button>
@@ -253,7 +254,18 @@
   </div>
 </div>
 
-<!-- TAB 2: Training -->
+<!-- TAB 2: Curriculum -->
+<div id="tab-curriculum" class="tab-content">
+  <div class="card" style="margin-bottom:16px">
+    <h3 style="margin-bottom:4px">12-Phase Curriculum</h3>
+    <div id="curriculum-meta" style="color:var(--text-muted);font-size:12px">
+      Loading…
+    </div>
+  </div>
+  <div id="curriculum-tracks"></div>
+</div>
+
+<!-- TAB 3: Training -->
 <div id="tab-training" class="tab-content">
   <div class="grid grid-4" style="margin-bottom:16px">
     <div class="card">
@@ -561,8 +573,12 @@ async function refreshPhase() {
     const d = await fetchJSON('/logiik/phase_metrics');
     document.getElementById('phase-name').textContent =
       d.phase || '—';
-    document.getElementById('phase-id').textContent =
-      'Phase ' + (d.phase_id || '—');
+    const trackInfo = _getPhaseTrack(d.phase_id);
+    const trackLabel = trackInfo
+      ? ` · <span style="color:${trackInfo.color}">${trackInfo.track}</span>`
+      : '';
+    document.getElementById('phase-id').innerHTML =
+      'Phase ' + (d.phase_id || '—') + trackLabel;
     document.getElementById('phase-iter').textContent =
       'Iteration: ' + (d.iteration || 0);
 
@@ -809,6 +825,92 @@ function clearLogs() {
   renderLogs();
 }
 
+// ── Curriculum ────────────────────────────────────────────────────────────────
+let _curriculum = null;
+const TRACK_COLORS = {
+  foundation: '#3b82f6', language: '#22c55e', domain: '#a855f7',
+  execution: '#f97316', integration: '#eab308', capstone: '#ef4444',
+};
+const TRACK_BG = {
+  foundation: '#1e3a5f', language: '#14432a', domain: '#3b1f5e',
+  execution: '#4a2610', integration: '#3d3310', capstone: '#4a1515',
+};
+
+function _getPhaseTrack(phaseId) {
+  if (!_curriculum) return null;
+  for (const [track, data] of Object.entries(_curriculum.tracks || {})) {
+    if (data.phases && data.phases.some(p => p.id === phaseId))
+      return { track, color: data.color };
+  }
+  return null;
+}
+
+function renderCurriculum(d) {
+  _curriculum = d;
+  document.getElementById('curriculum-meta').textContent =
+    'Total phases: ' + d.total_phases +
+    ' · ' + Object.keys(d.tracks).length + ' tracks' +
+    ' · Last updated: ' + new Date().toLocaleTimeString();
+
+  const container = document.getElementById('curriculum-tracks');
+  const trackOrder = ['foundation','language','domain','execution','integration','capstone'];
+  container.innerHTML = trackOrder.map(track => {
+    const tdata = d.tracks[track];
+    if (!tdata) return '';
+    const color = tdata.color || TRACK_COLORS[track] || '#888';
+    const bg = TRACK_BG[track] || '#1a1d27';
+    const phases = tdata.phases || [];
+    const cards = phases.map(p => `
+      <div style="background:var(--surface);border:1px solid ${color}44;
+           border-left:3px solid ${color};border-radius:6px;padding:12px;
+           min-width:200px;flex:1">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <span style="background:${color};color:#000;font-size:10px;
+                font-weight:700;padding:2px 6px;border-radius:3px">
+            Phase ${p.id}
+          </span>
+          ${p.teacher_student ?
+            '<span style="background:#eab30844;color:#eab308;font-size:10px;' +
+            'padding:2px 6px;border-radius:3px;border:1px solid #eab30866">T-S</span>'
+            : ''}
+        </div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">
+          ${p.display_name || p.name}
+        </div>
+        <div style="color:var(--text-muted);font-size:11px">
+          Gen ratio: ${p.generative_ratio != null ?
+            (p.generative_ratio * 100).toFixed(0) + '%' : '—'}
+          &nbsp;·&nbsp;
+          Threshold: ${p.correctness_threshold != null ?
+            (p.correctness_threshold * 100).toFixed(0) + '%' : '—'}
+        </div>
+      </div>
+    `).join('');
+
+    return `
+      <div style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="width:10px;height:10px;border-radius:50%;
+                background:${color};display:inline-block"></span>
+          <span style="font-size:13px;font-weight:600;color:${color};
+                text-transform:capitalize">${track}</span>
+          <span style="color:var(--text-muted);font-size:11px">
+            (${phases.length} phase${phases.length !== 1 ? 's' : ''})
+          </span>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">${cards}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function refreshCurriculum() {
+  try {
+    const d = await fetchJSON('/logiik/curriculum');
+    renderCurriculum(d);
+  } catch(e) {}
+}
+
 // ── Main polling loop ─────────────────────────────────────────────────────────
 async function refresh() {
   await checkHealth();
@@ -820,6 +922,7 @@ async function refresh() {
   ]);
 }
 
+refreshCurriculum();
 refresh();
 setInterval(refresh, REFRESH_MS);
 </script>

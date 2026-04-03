@@ -330,6 +330,52 @@ async def get_gpu_status():
     return status
 
 
+# ─── Curriculum ───────────────────────────────────────────────────────────────
+
+@app.get("/logiik/curriculum")
+async def get_curriculum():
+    """
+    Return full 12-phase curriculum structure grouped by track.
+    Used by dashboard Phase Monitor tab.
+    """
+    from logiik.curriculum.phases import PHASES, get_phases_by_track
+    tracks = [
+        "foundation", "language", "domain",
+        "execution", "integration", "capstone"
+    ]
+    track_colors = {
+        "foundation": "#3b82f6",
+        "language":   "#22c55e",
+        "domain":     "#a855f7",
+        "execution":  "#f97316",
+        "integration":"#eab308",
+        "capstone":   "#ef4444",
+    }
+    result = {}
+    for track in tracks:
+        phases = get_phases_by_track(track)
+        result[track] = {
+            "color": track_colors[track],
+            "phases": [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "display_name": p.display_name,
+                    "generative_ratio": p.generative_ratio,
+                    "correctness_threshold": p.correctness_threshold,
+                    "teacher_student": p.teacher_student,
+                    "duration": p.duration,
+                }
+                for p in phases
+            ]
+        }
+    return {
+        "total_phases": len(PHASES),
+        "tracks": result,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
 # ─── Retrieval stats ──────────────────────────────────────────────────────────
 
 @app.get("/logiik/retrieval_stats")
