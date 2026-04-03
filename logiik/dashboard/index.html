@@ -969,7 +969,7 @@ function renderLogs(){
 let _errors = [];
 async function pollErrors(){
   try{
-    const r = await fetch(API+'/logs/errors');
+    const r = await fetch(API+'/logiik/logs/errors');
     if(!r.ok) return;
     const d = await r.json();
     _errors = d.errors || [];
@@ -1002,7 +1002,7 @@ function copyErrors(){
   });
 }
 async function clearErrors(){
-  try{ await fetch(API+'/logs/errors/clear',{method:'POST'}); }catch{}
+  try{ await fetch(API+'/logiik/logs/errors/clear',{method:'POST'}); }catch{}
   _errors=[];
   renderErrors();
 }
