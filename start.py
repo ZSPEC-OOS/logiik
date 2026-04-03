@@ -46,8 +46,16 @@ def wait_for_server(timeout=60):
     return False
 
 
+def clear_pycache():
+    import shutil
+    root = Path(__file__).parent
+    for cache_dir in root.rglob("__pycache__"):
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+
 def main():
     install_dependencies()
+    clear_pycache()
 
     print("Starting LOGIIK server...")
     root = Path(__file__).parent
