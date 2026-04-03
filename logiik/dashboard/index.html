@@ -192,7 +192,147 @@
   <div class="status-dot" id="api-dot"></div>
   <h1>Logiik</h1>
   <span id="api-status">Connecting...</span>
+  <button onclick="showHowTo()" style="margin-left:auto;background:#1e3a5f;
+    border:1px solid #3b82f6;color:#3b82f6;padding:6px 14px;border-radius:6px;
+    cursor:pointer;font-size:13px;font-weight:600">
+    ? How To Build Your Dataset
+  </button>
 </header>
+
+<!-- How-To Modal -->
+<div id="howto-modal" style="display:none;position:fixed;inset:0;
+     background:#000000cc;z-index:1000;overflow-y:auto;padding:40px 16px">
+  <div style="max-width:720px;margin:0 auto;background:#1a1d27;
+       border:1px solid #2a2d3a;border-radius:10px;padding:32px">
+
+    <div style="display:flex;justify-content:space-between;
+         align-items:center;margin-bottom:24px">
+      <h2 style="font-size:18px;font-weight:700">
+        How To Build Your Training Dataset
+      </h2>
+      <button onclick="hideHowTo()" style="background:none;border:none;
+        color:#8892a4;font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:20px;font-size:13px;line-height:1.7">
+
+      <!-- Step 1 -->
+      <div style="border-left:3px solid #3b82f6;padding-left:16px">
+        <div style="color:#3b82f6;font-weight:700;margin-bottom:6px">
+          STEP 1 — Set up local mode (no accounts needed yet)
+        </div>
+        <div style="color:#e2e8f0">
+          Open <code style="background:#0f1117;padding:2px 6px;border-radius:3px">logiik/config/config.yaml</code>
+          and change one line:
+        </div>
+        <pre style="background:#0f1117;padding:12px;border-radius:6px;
+             margin-top:8px;color:#22c55e;font-size:12px;overflow-x:auto">backend: "faiss"   # was "pinecone" — uses local disk instead</pre>
+        <div style="color:#8892a4;margin-top:6px">
+          You don't need Pinecone or Firebase until you're ready to train.
+          FAISS stores vectors locally on your machine.
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div style="border-left:3px solid #22c55e;padding-left:16px">
+        <div style="color:#22c55e;font-weight:700;margin-bottom:6px">
+          STEP 2 — Run generation for all 12 phases
+        </div>
+        <div style="color:#e2e8f0;margin-bottom:8px">
+          Start the Logiik server, then let all 12 phases run to completion.
+          The dashboard Phase Monitor shows progress. Each phase finishes when
+          both bars hit their targets (Coverage 95%, Saturation 90%).
+        </div>
+        <pre style="background:#0f1117;padding:12px;border-radius:6px;
+             color:#22c55e;font-size:12px;overflow-x:auto">python -m logiik.main</pre>
+        <div style="color:#8892a4;margin-top:6px">
+          This runs on CPU. No GPU needed. Let it run — it may take hours
+          depending on how many topics you provide.
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div style="border-left:3px solid #a855f7;padding-left:16px">
+        <div style="color:#a855f7;font-weight:700;margin-bottom:6px">
+          STEP 3 — Export to training files
+        </div>
+        <div style="color:#e2e8f0;margin-bottom:8px">
+          Once all phases complete, export the banked Q&amp;A pairs to JSONL files:
+        </div>
+        <pre style="background:#0f1117;padding:12px;border-radius:6px;
+             color:#a855f7;font-size:12px;overflow-x:auto">python -m logiik.utils.export_dataset --output_dir ./training_data</pre>
+        <div style="color:#8892a4;margin-top:6px">
+          This creates one file per phase + a combined <code style="background:#0f1117;
+          padding:2px 5px;border-radius:3px">all_phases.jsonl</code>.
+          Check <code style="background:#0f1117;padding:2px 5px;border-radius:3px">export_summary.json</code>
+          to see how many examples were banked per phase.
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div style="border-left:3px solid #f97316;padding-left:16px">
+        <div style="color:#f97316;font-weight:700;margin-bottom:6px">
+          STEP 4 — Train on GPU (Phases 1–11)
+        </div>
+        <div style="color:#e2e8f0;margin-bottom:8px">
+          Move your <code style="background:#0f1117;padding:2px 5px;border-radius:3px">training_data/</code>
+          folder to your GPU machine, then run:
+        </div>
+        <pre style="background:#0f1117;padding:12px;border-radius:6px;
+             color:#f97316;font-size:12px;overflow-x:auto">pip install trl transformers datasets accelerate bitsandbytes peft
+
+python -m logiik.core.sft_trainer \
+  --data_dir   ./training_data \
+  --model_name mistralai/Mistral-7B-v0.1 \
+  --output_dir ./checkpoints</pre>
+        <div style="color:#8892a4;margin-top:6px">
+          Uses LoRA (QLoRA 4-bit) by default — works on a single consumer GPU
+          (24GB VRAM or more recommended). Swap model name for any HuggingFace
+          causal model.
+        </div>
+      </div>
+
+      <!-- Step 5 -->
+      <div style="border-left:3px solid #ef4444;padding-left:16px">
+        <div style="color:#ef4444;font-weight:700;margin-bottom:6px">
+          STEP 5 — Phase 12 RL training (PPO)
+        </div>
+        <div style="color:#e2e8f0;margin-bottom:8px">
+          After SFT, run Phase 12 PPO fine-tuning on the checkpoint:
+        </div>
+        <pre style="background:#0f1117;padding:12px;border-radius:6px;
+             color:#ef4444;font-size:12px;overflow-x:auto">python -m logiik.core.sft_trainer \
+  --data_dir   ./training_data \
+  --model_name ./checkpoints/final \
+  --output_dir ./checkpoints_phase12 \
+  --phases 12 \
+  --no_4bit</pre>
+        <div style="color:#8892a4;margin-top:6px">
+          Phase 12 uses the PPO/TRL backend (already wired). This refines the
+          model's judgment and calibration on top of the SFT base.
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div style="background:#0f1117;border-radius:8px;padding:16px;
+           border:1px solid #2a2d3a">
+        <div style="font-weight:700;margin-bottom:10px;color:#eab308">
+          What you need
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;
+             color:#8892a4;font-size:12px">
+          <div><span style="color:#22c55e">✓</span> Generation: any CPU machine</div>
+          <div><span style="color:#22c55e">✓</span> FAISS: built in, no setup</div>
+          <div><span style="color:#22c55e">✓</span> Firebase: optional, skip for now</div>
+          <div><span style="color:#22c55e">✓</span> Pinecone: optional, skip for now</div>
+          <div><span style="color:#eab308">→</span> Training: GPU (24GB+ VRAM)</div>
+          <div><span style="color:#eab308">→</span> Model: any HuggingFace causal LM</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 <nav>
   <button class="active" onclick="showTab('phase', this)">Phase Monitor</button>
@@ -921,6 +1061,19 @@ async function refresh() {
     refreshGPU(),
   ]);
 }
+
+// ── How-To modal ──────────────────────────────────────────────────────────────
+function showHowTo() {
+  document.getElementById('howto-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+function hideHowTo() {
+  document.getElementById('howto-modal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.getElementById('howto-modal').addEventListener('click', function(e) {
+  if (e.target === this) hideHowTo();
+});
 
 refreshCurriculum();
 refresh();
