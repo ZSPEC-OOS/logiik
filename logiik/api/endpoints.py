@@ -795,26 +795,35 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
     )
 
     async def _call_teacher(topic: str, difficulty: float) -> dict:
-        prompt = (
+        sys_msg = "You are an expert teacher AI generating supervised fine-tuning data."
+        user_msg = (
             f"Generate a training Q&A example about: {topic}\n"
             f"Difficulty: {difficulty * 100:.0f}%\n\n"
             "Respond with ONLY a raw JSON object — no markdown fences, no extra text:\n"
             '{"question":"...","answers":["option A","option B","option C","option D","option E"],'
             '"correct_indices":[0],"explanation":"...","domain":"..."}'
         )
+        messages = [
+            {"role": "system", "content": sys_msg},
+            {"role": "user",   "content": user_msg},
+        ]
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, lambda: client.chat.completions.create(
-            model=model_id,
-            messages=[
-                {"role": "system", "content": (
-                    "You are an expert teacher AI generating supervised fine-tuning data. "
-                    "Always respond with a single valid JSON object and nothing else."
-                )},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=1,
-            max_tokens=1500,
-        ))
+
+        def _do_call(use_json_format: bool):
+            kwargs = dict(model=model_id, messages=messages, temperature=1, max_tokens=1500)
+            if use_json_format:
+                kwargs["response_format"] = {"type": "json_object"}
+            return client.chat.completions.create(**kwargs)
+
+        # Try with response_format first (OpenAI/compatible); fall back for models that reject it
+        try:
+            response = await loop.run_in_executor(None, lambda: _do_call(True))
+        except Exception as e:
+            if "response_format" in str(e).lower() or "400" in str(e):
+                response = await loop.run_in_executor(None, lambda: _do_call(False))
+            else:
+                raise
+
         raw = (response.choices[0].message.content or "").strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]

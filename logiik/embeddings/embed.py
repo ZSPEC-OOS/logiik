@@ -36,7 +36,7 @@ class TextEmbedder:
     Singleton — instantiated once via get_embedder().
     """
 
-    MODEL_NAME = "allenai/specter2"
+    MODEL_NAME = "allenai/specter2_base"
     OUTPUT_DIM = 768
 
     def __init__(self):

@@ -147,8 +147,8 @@ def check_embedding_model():
 
     try:
         from sentence_transformers import SentenceTransformer
-        logger.info("[INFO] Loading allenai/specter2 — first run downloads ~500MB...")
-        model = SentenceTransformer("allenai/specter2")
+        logger.info("[INFO] Loading allenai/specter2_base — first run downloads ~500MB...")
+        model = SentenceTransformer("allenai/specter2_base")
         test_emb = model.encode("enzyme kinetics at low pH")
         assert len(test_emb) == 768, f"Expected dim=768, got {len(test_emb)}"
         logger.info(f"[PASS] SPECTER2 loaded: output_dim={len(test_emb)}")
