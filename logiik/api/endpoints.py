@@ -664,57 +664,73 @@ _TEACHER_CFG = Path(__file__).parents[2] / "configs" / "teacher_config.yaml"
 _TRAINING_DATA_DIR = Path(__file__).parents[2] / "knowledge_base" / "training_data"
 
 
-# ── Saturation helpers ────────────────────────────────────────────────────────
+# ── Deduplication & saturation (embedding-based) ─────────────────────────────
+import numpy as _np
+from logiik.embeddings.embed import get_embedder as _get_embedder
+from logiik.utils.helpers import is_duplicate as _is_duplicate_emb, compute_saturation as _compute_saturation_emb
 
-def _word_set(text: str) -> set:
-    return set(text.lower().split())
+# Cosine similarity threshold for Q&A semantic dedup.
+# 0.85 catches paraphrases; lower than the 0.90 used for PDF chunks
+# since questions are shorter and we want slightly more tolerance.
+_QA_DEDUP_THRESHOLD = 0.85
 
 
-def _jaccard(a: set, b: set) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
-def _saturation_score(recent_questions: List[str], pool: List[str]) -> float:
+def _saturation_score_emb(
+    recent_embeddings: List[_np.ndarray],
+    pool_embeddings: List[_np.ndarray],
+) -> float:
     """
-    Average of each recent question's max Jaccard similarity against the pool.
-    High score (→1.0) means new questions are very similar to existing ones = saturated.
-    Low score (→0.0) means new questions are novel.
+    Embedding-based saturation: mean of each recent embedding's cosine
+    similarity to the last top_k embeddings in the pool.
+    High score (→1.0) = model generating semantically redundant questions = saturated.
+    Returns 0.0 if pool or recent is empty.
     """
-    if not pool or not recent_questions:
+    if not pool_embeddings or not recent_embeddings:
         return 0.0
-    pool_sets = [_word_set(q) for q in pool]
-    scores = []
-    for q in recent_questions:
-        q_set = _word_set(q)
-        scores.append(max((_jaccard(q_set, p) for p in pool_sets), default=0.0))
-    return sum(scores) / len(scores)
+    scores = [_compute_saturation_emb(e, pool_embeddings) for e in recent_embeddings]
+    return float(_np.mean(scores))
 
 
-# ── Per-track generation limits & dedup thresholds ───────────────────────────
-# Dedup threshold: lower = stricter. Foundation questions share few words even
-# when conceptually similar, so 0.40 catches near-duplicates without blocking
-# genuinely different questions. Domain/integration share heavy vocabulary so
-# need a higher threshold to avoid false positives.
+# ── Per-track generation base limits ─────────────────────────────────────────
+# These are per-topic Q&A counts. Scaled up by _compute_track_limits()
+# when a large corpus has been ingested.
 
-_TRACK_LIMITS = {
-    "foundation":  {"min": 10, "max": 20, "dedup": 0.40},
-    "language":    {"min": 15, "max": 25, "dedup": 0.50},
-    "domain":      {"min": 20, "max": 35, "dedup": 0.60},
-    "execution":   {"min": 15, "max": 25, "dedup": 0.55},
-    "integration": {"min": 20, "max": 35, "dedup": 0.60},
-    "capstone":    {"min": 25, "max": 40, "dedup": 0.60},
+_BASE_TRACK_LIMITS = {
+    "foundation":  {"min": 10, "max": 20},
+    "language":    {"min": 15, "max": 25},
+    "domain":      {"min": 20, "max": 35},
+    "execution":   {"min": 15, "max": 25},
+    "integration": {"min": 20, "max": 35},
+    "capstone":    {"min": 25, "max": 40},
 }
 
-# ── Deduplication ─────────────────────────────────────────────────────────────
 
-def _is_duplicate(question: str, pool: List[str], threshold: float = 0.40) -> bool:
-    """Return True if question is too similar to any question already in pool."""
-    if not pool:
-        return False
-    q_set = _word_set(question)
-    return any(_jaccard(q_set, _word_set(p)) >= threshold for p in pool)
+def _compute_track_limits(n_corpus_chunks: int) -> dict:
+    """
+    Scale per-topic Q&A caps based on ingested corpus size.
+
+    The more source material that has been ingested, the more distinct
+    Q&A pairs can be drawn from each topic before saturation is genuine.
+
+    Scale formula: 1x at 0 chunks → up to 10x at 50k+ chunks.
+      scale = clamp(1.0 + n_chunks / 5_000, 1.0, 10.0)
+
+    Examples:
+      0 chunks      → 1x  (base: 10–40 per topic)
+      5 000 chunks  → 2x  (20–80 per topic)
+      25 000 chunks → 6x  (120–240 per topic)
+      50 000+ chunks → 10x (100–400 per topic)
+    """
+    if n_corpus_chunks <= 0:
+        return _BASE_TRACK_LIMITS
+    scale = max(1.0, min(10.0, 1.0 + n_corpus_chunks / 5_000))
+    return {
+        track: {
+            "min": lim["min"],
+            "max": round(lim["max"] * scale),
+        }
+        for track, lim in _BASE_TRACK_LIMITS.items()
+    }
 
 
 # ── Phase-aware prompt construction ──────────────────────────────────────────
@@ -986,13 +1002,17 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
     For each phase → each topic:
       - Generates questions continuously, saving each to JSONL on disk
       - After min_examples_per_topic, checks saturation every check_interval
-      - Saturation = average max-Jaccard of recent questions vs. the full pool
+      - Saturation = mean cosine similarity of recent question embeddings vs pool
       - Topic is done when saturation >= phase threshold OR count >= max cap
     Phase advances when coverage_ratio of saturated topics >= phase threshold.
     All thresholds come from phases.py completion_criteria — no hardcoding.
 
+    Per-topic caps scale with ingested corpus size (via _compute_track_limits).
+    Deduplication uses SPECTER2 cosine similarity (threshold 0.85) so that
+    paraphrased or reworded duplicates are caught, not just word-overlap ones.
+
     Files: knowledge_base/training_data/phase_01_memorization.jsonl etc.
-    Resume-safe: counts existing lines, reloads questions from disk to continue
+    Resume-safe: counts existing lines, re-embeds questions from disk to continue
     saturation tracking where it left off.
     """
     global _qa_stop_flag, _training_metrics, _phase_metrics
@@ -1004,6 +1024,26 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
     _fb_store = TextStore()
     phases, min_per_topic, max_per_topic, check_interval = _load_curriculum_phases()
     criteria_map = _load_phase_criteria()
+
+    # Corpus size — used to scale per-topic Q&A caps.
+    # Query vector DB for ingested chunk count; fall back to 0 if unavailable.
+    _n_corpus_chunks = 0
+    try:
+        _vdb = VectorDB()
+        _vdb_stats = _vdb.stats()
+        _n_corpus_chunks = (
+            _vdb_stats.get("total_vector_count")
+            or _vdb_stats.get("namespaces", {}).get("", {}).get("vector_count", 0)
+            or 0
+        )
+        logger.info("Corpus size: %d vectors — track limits will be scaled accordingly", _n_corpus_chunks)
+    except Exception as _e:
+        logger.warning("Could not query vector DB for corpus size (%s) — using base track limits", _e)
+
+    _track_limits = _compute_track_limits(_n_corpus_chunks)
+
+    # Embedder singleton — lazy-loads SPECTER2 on first embed call.
+    _embedder = _get_embedder()
     total_phases = len(phases)
 
     total_saved = sum(
@@ -1091,10 +1131,9 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
             phase_cfg = _get_phase(phase_id)
             track     = phase_cfg.track if phase_cfg else "foundation"
             q_types   = (phase_cfg.question_types if phase_cfg else ["factual_recall"])
-            limits       = _TRACK_LIMITS.get(track, {"min": 15, "max": 25, "dedup": 0.55})
-            phase_min    = limits["min"]
-            phase_max    = limits["max"]
-            dedup_thresh = limits.get("dedup", 0.55)
+            limits    = _track_limits.get(track, {"min": 15, "max": 25})
+            phase_min = limits["min"]
+            phase_max = limits["max"]
 
             criteria = _match_phase_criteria(phase_name, criteria_map)
             phase_coverage_threshold  = criteria.get("coverage_ratio", 0.95)
@@ -1112,8 +1151,22 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
             )
             _training_metrics["current_phase"] = phase_name
 
-            # Re-read existing questions per topic for saturation continuity on resume
+            # Re-read existing questions per topic for saturation continuity on resume.
+            # Batch-embed all disk questions so embedding-based dedup and saturation
+            # checks work correctly from the first new question generated.
             all_disk_questions = _read_questions_from_disk(out_path)
+            if all_disk_questions:
+                _loop = asyncio.get_event_loop()
+                _disk_emb_matrix = await _loop.run_in_executor(
+                    None, lambda: _embedder.embed_texts(all_disk_questions)
+                )
+                all_disk_embeddings: List[_np.ndarray] = list(_disk_emb_matrix)
+                logger.info(
+                    "Phase %d: re-embedded %d existing questions from disk",
+                    phase_id, len(all_disk_embeddings),
+                )
+            else:
+                all_disk_embeddings: List[_np.ndarray] = []
 
             saturated_topics = 0
             topics_per_q_count: List[int] = []  # examples generated per topic
@@ -1126,6 +1179,7 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                 # (approximate — stored sequentially, so divide equally)
                 slice_start = sum(topics_per_q_count) if topics_per_q_count else 0
                 topic_pool: List[str] = all_disk_questions[slice_start:]
+                topic_pool_embeddings: List[_np.ndarray] = all_disk_embeddings[slice_start:]
 
                 count_this_topic = len(topic_pool)
                 topic_saturated  = False
@@ -1150,9 +1204,9 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
 
                     # ── Saturation check (after minimum floor) ────────────
                     if ex_idx >= phase_min and ex_idx % check_interval == 0:
-                        recent = topic_pool[-check_interval:]
-                        prior  = topic_pool[:-check_interval]
-                        current_sat = _saturation_score(recent, prior) if prior else 0.0
+                        recent_embs = topic_pool_embeddings[-check_interval:]
+                        prior_embs  = topic_pool_embeddings[:-check_interval]
+                        current_sat = _saturation_score_emb(recent_embs, prior_embs)
                         logger.info(
                             "  Saturation check — topic '%s': %.3f (threshold %.2f) @ %d examples",
                             topic[:40], current_sat, phase_sat_threshold, ex_idx,
@@ -1211,8 +1265,14 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         question = data.get("question", "")
                         if not question:
                             continue
-                        if _is_duplicate(question, topic_pool, dedup_thresh):
-                            logger.debug("  Skipped duplicate for topic '%s'", topic[:40])
+
+                        # Embedding-based semantic dedup — catches paraphrases that
+                        # word-overlap (Jaccard) would miss.
+                        _q_emb = await asyncio.get_event_loop().run_in_executor(
+                            None, lambda q=question: _embedder.embed_text(q)
+                        )
+                        if _is_duplicate_emb(_q_emb, topic_pool_embeddings, threshold=_QA_DEDUP_THRESHOLD):
+                            logger.debug("  Skipped semantic duplicate for topic '%s'", topic[:40])
                             continue
 
                         used_q_type = q_types[(q_type_idx + i) % len(q_types)]
@@ -1241,6 +1301,7 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         else:
                             logger.warning("Firebase sync FAILED for %s", _record_id)
                         topic_pool.append(question)
+                        topic_pool_embeddings.append(_q_emb)
                         batch_saved += 1
                         ex_idx      += 1
                         phase_saved += 1
