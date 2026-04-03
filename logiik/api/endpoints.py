@@ -195,6 +195,22 @@ async def health():
     }
 
 
+# ─── Error log buffer ─────────────────────────────────────────────────────────
+
+@app.get("/logiik/logs/errors")
+async def get_error_logs():
+    """Return recent WARNING/ERROR entries captured in the in-memory buffer."""
+    from logiik.utils.logging import get_error_buffer
+    return {"errors": get_error_buffer().get_errors()}
+
+
+@app.post("/logiik/logs/errors/clear")
+async def clear_error_logs():
+    from logiik.utils.logging import get_error_buffer
+    get_error_buffer().clear()
+    return {"status": "cleared"}
+
+
 # ─── Phase metrics ────────────────────────────────────────────────────────────
 
 @app.get("/logiik/phase_metrics")
