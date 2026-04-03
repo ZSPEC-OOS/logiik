@@ -4,6 +4,7 @@ All other modules import from here — no inline print statements.
 """
 import logging
 import sys
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,43 @@ _formatter = logging.Formatter(
     fmt="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
+
+# ── In-memory error buffer (WARNING and above) ────────────────────────────────
+
+class _ErrorBufferHandler(logging.Handler):
+    """Keeps the last 200 WARNING/ERROR/CRITICAL records in a ring buffer."""
+    def __init__(self, maxlen: int = 200):
+        super().__init__(level=logging.WARNING)
+        self._buf: deque = deque(maxlen=maxlen)
+
+    def emit(self, record: logging.LogRecord):
+        self._buf.appendleft({
+            "ts":      self.formatter.formatTime(record, "%Y-%m-%d %H:%M:%S"),
+            "level":   record.levelname,
+            "logger":  record.name,
+            "message": record.getMessage(),
+        })
+
+    def get_errors(self) -> list:
+        return list(self._buf)
+
+    def clear(self):
+        self._buf.clear()
+
+
+_error_buffer = _ErrorBufferHandler()
+_error_buffer.setFormatter(_formatter)
+
+# Attach to root logiik logger once
+_root = logging.getLogger("logiik")
+if not any(isinstance(h, _ErrorBufferHandler) for h in _root.handlers):
+    _root.addHandler(_error_buffer)
+
+
+def get_error_buffer() -> _ErrorBufferHandler:
+    """Return the shared error buffer (used by the API endpoint)."""
+    return _error_buffer
+
 
 def get_logger(name: str) -> logging.Logger:
     """

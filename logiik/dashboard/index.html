@@ -467,7 +467,23 @@ code{background:var(--bg);padding:1px 5px;border-radius:3px;font-family:'Cascadi
       <button class="btn btn-ghost" onclick="_logs.length=0;renderLogs()">Clear</button>
     </div>
   </div>
-  <div id="log-box"><div class="log-line"><span class="log-ts">[--:--:--]</span> <span class="log-info">INFO</span> LOGIIK dashboard initialised.</div></div>
+  <div id="log-box" style="margin-bottom:20px"><div class="log-line"><span class="log-ts">[--:--:--]</span> <span class="log-info">INFO</span> LOGIIK dashboard initialised.</div></div>
+
+  <!-- ── Error / Warning Panel ── -->
+  <div class="card">
+    <div style="display:flex;align-items:center;margin-bottom:14px">
+      <h3 style="margin-bottom:0">Errors &amp; Warnings <span id="err-badge" style="display:inline-block;background:var(--red);color:#fff;border-radius:10px;padding:1px 8px;font-size:10px;margin-left:6px;font-weight:700">0</span></h3>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn btn-ghost" id="copy-errors-btn" onclick="copyErrors()" style="display:flex;align-items:center;gap:5px">
+          <span>⎘</span> Copy for Claude
+        </button>
+        <button class="btn btn-ghost" onclick="clearErrors()">Clear</button>
+      </div>
+    </div>
+    <div id="error-box" style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:'Cascadia Code','Consolas',monospace;font-size:11.5px;max-height:380px;overflow-y:auto">
+      <div style="color:var(--muted)">No errors — all clear.</div>
+    </div>
+  </div>
 </div>
 
 <!-- ── SETTINGS ── -->
@@ -949,10 +965,52 @@ function renderLogs(){
   ).join('');
 }
 
+// ── Error log panel ───────────────────────────────────────────────────────────
+let _errors = [];
+async function pollErrors(){
+  try{
+    const r = await fetch(API+'/logs/errors');
+    if(!r.ok) return;
+    const d = await r.json();
+    _errors = d.errors || [];
+    renderErrors();
+  }catch{}
+}
+function renderErrors(){
+  const box = document.getElementById('error-box');
+  const badge = document.getElementById('err-badge');
+  if(!_errors.length){
+    box.innerHTML='<div style="color:var(--muted)">No errors — all clear.</div>';
+    badge.style.display='none';
+    return;
+  }
+  badge.style.display='inline-block';
+  badge.textContent=_errors.length;
+  box.innerHTML=_errors.map(e=>{
+    const lvl = e.level==='WARNING'?'log-warn':'log-err';
+    return `<div class="log-line"><span class="log-ts">[${e.ts}]</span> <span class="${lvl}">${e.level}</span> <span style="color:var(--muted)">[${e.logger}]</span> ${e.message}</div>`;
+  }).join('');
+}
+function copyErrors(){
+  if(!_errors.length){ alert('No errors to copy.'); return; }
+  const text = _errors.map(e=>`[${e.ts}] [${e.level}] [${e.logger}] ${e.message}`).join('\n');
+  navigator.clipboard.writeText(text).then(()=>{
+    const btn = document.getElementById('copy-errors-btn');
+    const orig = btn.innerHTML;
+    btn.innerHTML='<span>✓</span> Copied!';
+    setTimeout(()=>btn.innerHTML=orig, 2000);
+  });
+}
+async function clearErrors(){
+  try{ await fetch(API+'/logs/errors/clear',{method:'POST'}); }catch{}
+  _errors=[];
+  renderErrors();
+}
+
 // ── Main loop ─────────────────────────────────────────────────────────────────
 async function tick(){
   await pollHealth();
-  await Promise.allSettled([pollPhase(),pollTraining(),pollKnowledge(),pollGPU()]);
+  await Promise.allSettled([pollPhase(),pollTraining(),pollKnowledge(),pollGPU(),pollErrors()]);
 }
 
 buildStrip();
