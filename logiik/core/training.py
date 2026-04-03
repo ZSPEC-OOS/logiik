@@ -240,6 +240,18 @@ class Phase7TeacherStudentLoop:
             f"attempt={attempt_index}, correctness={correctness:.2f}, "
             f"status={status}"
         )
+
+        # Update metrics so both API-driven and run_feedback_loop paths
+        # are reflected in get_metrics().
+        prev = self._metrics.get(question_id, {
+            "iterations": 0, "final_correctness": 0.0, "threshold_met": False
+        })
+        self._metrics[question_id] = {
+            "iterations": prev["iterations"] + 1,
+            "final_correctness": correctness,
+            "threshold_met": threshold_met or prev["threshold_met"],
+        }
+
         return threshold_met
 
     def run_feedback_loop(
@@ -553,6 +565,9 @@ class GenerativeCurriculum:
         # Phase 11 uses same loop mechanism
         self._phase11_loop = Phase7TeacherStudentLoop()
 
+        # Corpus retriever for Phase 3 (lazy init)
+        self._retriever = None
+
         logger.info(
             f"GenerativeCurriculum initialised: "
             f"{len(self.phase_names)} phases"
@@ -836,8 +851,9 @@ class GenerativeCurriculum:
     ) -> List[TrainingExample]:
         """
         Phase 3: Scientific Language & Literature.
-        Generates prompts requiring parsing, classification,
-        and production of scientific writing conventions.
+        Queries ingested PDF corpus when available.
+        Falls back to synthetic generation if retriever
+        not initialised or corpus is empty.
         """
         topics = self._get_topics()
         question_type_suffixes = [
@@ -869,29 +885,87 @@ class GenerativeCurriculum:
             ),
         ]
         examples = []
+
+        # Attempt corpus retrieval for real scientific text
+        corpus_chunks = []
+        if self._retriever is not None:
+            try:
+                for topic in topics:
+                    chunks = self._retriever.retrieve(
+                        query=topic,
+                        top_k=2,
+                        filter={"phase": {"$eq": "phase9"}},
+                        min_score=0.50,
+                    )
+                    corpus_chunks.extend(chunks)
+            except Exception as e:
+                logger.warning(
+                    f"Phase 3 corpus retrieval failed: {e}. "
+                    "Falling back to synthetic generation."
+                )
+
         for i in range(count):
             topic = topics[i % len(topics)]
-            suffix = question_type_suffixes[i % len(question_type_suffixes)]
-            base = self.teacher.teachers[0].generate_training_example(
-                topic, difficulty=0.80, num_answers=5
-            )
-            examples.append(TrainingExample(
-                question=(
+            suffix = question_type_suffixes[
+                i % len(question_type_suffixes)
+            ]
+
+            # Use real corpus chunk as context if available
+            if corpus_chunks:
+                chunk = corpus_chunks[i % len(corpus_chunks)]
+                context_text = chunk.text[:600]
+                question_text = (
+                    f"[Scientific Language Task — Real Corpus]\n"
+                    f"Source: {chunk.source}\n"
+                    f"Passage:\n{context_text}\n\n"
+                    f"{suffix}"
+                )
+                domain = "scientific_language_corpus"
+            else:
+                base = self.teacher.teachers[0].generate_training_example(
+                    topic, difficulty=0.80, num_answers=5
+                )
+                question_text = (
                     f"[Scientific Language Task]\n"
                     f"Topic: {topic}\n"
                     f"Context: {base.question}\n\n"
                     f"{suffix}"
-                ),
-                answers=base.answers,
-                correct_indices=base.correct_indices,
+                )
+                domain = f"scientific_language_{base.domain}"
+
+            examples.append(TrainingExample(
+                question=question_text,
+                answers=["[GENERATE — produce a precise, "
+                         "well-reasoned scientific language "
+                         "analysis]"],
+                correct_indices=[0],
                 difficulty=0.80,
-                domain=f"scientific_language_{base.domain}",
+                domain=domain,
                 explanation=(
-                    f"Scientific language and literature task: "
-                    f"{base.explanation}"
+                    "Scientific language and literature analysis "
+                    "requiring classification, hedging identification, "
+                    "or register-appropriate rewriting."
                 ),
             ))
         return examples
+
+    def set_retriever(self, retriever) -> None:
+        """
+        Attach a Retriever instance for corpus-aware
+        Phase 3 generation.
+
+        Call this after initialising the retriever:
+            curriculum.set_retriever(retriever)
+
+        When set, Phase 3 queries the ingested PDF corpus
+        for real scientific text rather than generating
+        synthetic examples.
+        """
+        self._retriever = retriever
+        logger.info(
+            "Phase 3 corpus retriever attached to "
+            "GenerativeCurriculum."
+        )
 
     def _gen_mathematical_statistical(
         self, count: int

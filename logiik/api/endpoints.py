@@ -16,7 +16,7 @@ import os
 import subprocess
 import asyncio
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Any, Optional, Dict, List
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
@@ -328,6 +328,176 @@ async def get_gpu_status():
         pass
 
     return status
+
+
+# ─── Teacher-Student loop state ───────────────────────────────────────────────
+# Holds in-memory loop instances for Phase 6 and Phase 11.
+# Populated on first POST to /logiik/ts/{phase}/question.
+
+_ts_loops: Dict[int, Any] = {}
+
+
+def _get_ts_loop(phase_id: int):
+    """
+    Return or create a Phase7TeacherStudentLoop for the
+    given phase. Phase 6 and Phase 11 both use this loop
+    mechanism with different correctness thresholds.
+    """
+    if phase_id not in _ts_loops:
+        from logiik.core.training import Phase7TeacherStudentLoop
+        _ts_loops[phase_id] = Phase7TeacherStudentLoop(
+            text_store=_get_store()
+        )
+    return _ts_loops[phase_id]
+
+
+class TSQuestionRequest(BaseModel):
+    prompt: str
+    answer_steps: List[str]
+    full_answer: str
+    difficulty: float = 0.93
+
+
+class TSFeedbackRequest(BaseModel):
+    question_id: str
+    attempt_index: int
+    feedback: List[str]
+    correctness: float
+    suggested_improvement: Optional[str] = None
+
+
+class TSAttemptRequest(BaseModel):
+    question_id: str
+    student_answer_steps: List[str]
+    student_full_answer: str
+
+
+@app.post("/logiik/ts/{phase_id}/question")
+async def ts_register_question(
+    phase_id: int, request: TSQuestionRequest
+):
+    """
+    Register a teacher-generated question for the
+    Phase 6 or Phase 11 teacher-student loop.
+
+    Args (path): phase_id — 6 or 11
+    Args (body): prompt, answer_steps, full_answer, difficulty
+
+    Returns: question_id (UUID string)
+    """
+    if phase_id not in (6, 11):
+        raise HTTPException(
+            status_code=400,
+            detail="Teacher-student loop only active for "
+                   "phases 6 and 11."
+        )
+    loop = _get_ts_loop(phase_id)
+    qid = loop.generate_teacher_question(
+        prompt=request.prompt,
+        answer_steps=request.answer_steps,
+        full_answer=request.full_answer,
+        difficulty=request.difficulty,
+    )
+    logger.info(
+        f"Phase {phase_id} T-S question registered: {qid}"
+    )
+    return {"question_id": qid, "phase_id": phase_id}
+
+
+@app.post("/logiik/ts/{phase_id}/attempt")
+async def ts_student_attempt(
+    phase_id: int, request: TSAttemptRequest
+):
+    """
+    Record a student attempt for a Phase 6 or Phase 11
+    teacher-student question.
+
+    Args (path): phase_id — 6 or 11
+    Args (body): question_id, student_answer_steps,
+                 student_full_answer
+
+    Returns: attempt_index
+    """
+    if phase_id not in (6, 11):
+        raise HTTPException(
+            status_code=400,
+            detail="Teacher-student loop only active for "
+                   "phases 6 and 11."
+        )
+    loop = _get_ts_loop(phase_id)
+    attempt = loop.student_attempt(
+        question_id=request.question_id,
+        student_answer_steps=request.student_answer_steps,
+        student_full_answer=request.student_full_answer,
+    )
+    return {
+        "question_id": request.question_id,
+        "attempt_index": attempt.attempt_index,
+        "phase_id": phase_id,
+    }
+
+
+@app.post("/logiik/ts/{phase_id}/feedback")
+async def ts_provide_feedback(
+    phase_id: int, request: TSFeedbackRequest
+):
+    """
+    Apply teacher feedback to a student attempt.
+
+    Args (path): phase_id — 6 or 11
+    Args (body): question_id, attempt_index, feedback,
+                 correctness, suggested_improvement
+
+    Returns:
+        threshold_met: bool — True if correctness >= threshold
+        correctness:   float
+        phase_id:      int
+    """
+    if phase_id not in (6, 11):
+        raise HTTPException(
+            status_code=400,
+            detail="Teacher-student loop only active for "
+                   "phases 6 and 11."
+        )
+    from logiik.curriculum.phases import get_phase
+    phase = get_phase(phase_id)
+    threshold = (
+        phase.correctness_threshold if phase else 0.90
+    )
+
+    loop = _get_ts_loop(phase_id)
+    threshold_met = loop.provide_feedback(
+        question_id=request.question_id,
+        attempt_index=request.attempt_index,
+        feedback=request.feedback,
+        correctness=request.correctness,
+        suggested_improvement=request.suggested_improvement,
+    )
+    return {
+        "threshold_met": threshold_met,
+        "correctness": request.correctness,
+        "threshold": threshold,
+        "phase_id": phase_id,
+    }
+
+
+@app.get("/logiik/ts/{phase_id}/metrics")
+async def ts_get_metrics(phase_id: int):
+    """
+    Return aggregate teacher-student loop metrics
+    for Phase 6 or Phase 11.
+    """
+    if phase_id not in (6, 11):
+        raise HTTPException(
+            status_code=400,
+            detail="Teacher-student loop only active for "
+                   "phases 6 and 11."
+        )
+    loop = _get_ts_loop(phase_id)
+    return {
+        "phase_id": phase_id,
+        "metrics": loop.get_metrics(),
+    }
 
 
 # ─── Curriculum ───────────────────────────────────────────────────────────────
