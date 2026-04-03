@@ -1198,6 +1198,35 @@ function onCacheTTLChange(){ _updateTTLDisplay(); onSettingInput(); }
 
 const TEST_PROMPTS=['What is supervised learning?','Explain gradient descent briefly.','What is a neural network?'];
 
+// Detect which endpoint to use: prefer /logiik/query (needs KB init),
+// fall back to /logiik/health (always available).
+async function _detectTestEndpoint(){
+  try{
+    const r=await fetch(API+'/logiik/query',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:'test',top_k:1,min_score:0.0})});
+    if(r.ok) return {path:'/logiik/query',mode:'kb',label:'Knowledge Base query'};
+  }catch{}
+  try{
+    const r=await fetch(API+'/logiik/health');
+    if(r.ok) return {path:'/logiik/health',mode:'health',label:'Server health ping (initialize system for full AI timing test)'};
+  }catch{}
+  return null;
+}
+
+async function _timedProbe(endpoint,body){
+  const t=performance.now();
+  let ok=false,cHit=null;
+  try{
+    const opts=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
+    const r=await fetch(API+endpoint,opts);
+    ok=r.ok||r.status===422; // 422 = schema error but server is alive
+    const ch=(r.headers.get('x-cache')||r.headers.get('x-prompt-cache-hit')||'').toLowerCase();
+    if(ch) cHit=/hit|true/.test(ch);
+  }catch{}
+  return {ms:performance.now()-t,ok,cHit};
+}
+
 async function runCacheTest(){
   const btn=document.getElementById('btn-run-test');
   const out=document.getElementById('cache-test-out');
@@ -1208,45 +1237,52 @@ async function runCacheTest(){
   document.getElementById('ctr-rec').textContent='';
   document.getElementById('ctr-review').innerHTML='';
 
-  const coldTimes=[],warmTimes=[];
-  let html='';
-
-  for(let i=0;i<TEST_PROMPTS.length;i++){
-    document.getElementById('ctr-status').textContent='Probe '+(i+1)+'/'+TEST_PROMPTS.length+' — cold…';
-    const t0=performance.now();
-    let ok=false, cHdr=null;
-    try{
-      const r=await fetch(API+'/logiik/query',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({query:TEST_PROMPTS[i],top_k:1,min_score:0.0})});
-      ok=r.ok;
-      const ch=r.headers.get('x-cache')||r.headers.get('x-prompt-cache-hit')||'';
-      if(ch) cHdr=/hit|true/i.test(ch);
-    }catch{}
-    const cold=performance.now()-t0;
-    await new Promise(r=>setTimeout(r,200));
-
-    document.getElementById('ctr-status').textContent='Probe '+(i+1)+'/'+TEST_PROMPTS.length+' — warm…';
-    const t1=performance.now();
-    try{
-      const r=await fetch(API+'/logiik/query',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({query:TEST_PROMPTS[i],top_k:1,min_score:0.0})});
-    }catch{}
-    const warm=performance.now()-t1;
-    await new Promise(r=>setTimeout(r,300));
-
-    if(ok){ coldTimes.push(cold); warmTimes.push(warm); }
-    const ratio=warm>0?(cold/warm).toFixed(1):'—';
-    html+=`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
-      <span style="color:var(--muted);font-size:10.5px">${TEST_PROMPTS[i]}</span>
-      <span style="font-weight:600;font-size:11px">${ok?`cold ${(cold/1000).toFixed(2)}s → warm ${(warm/1000).toFixed(2)}s (${ratio}×)`:'err'}</span>
-    </div>`;
-  }
-  document.getElementById('ctr-rows').innerHTML=html||'<span style="color:var(--red)">No successful probes — is the API running?</span>';
-
-  if(!coldTimes.length){
-    document.getElementById('ctr-status').textContent='All probes failed.';
+  document.getElementById('ctr-status').textContent='Detecting available endpoint…';
+  const ep=await _detectTestEndpoint();
+  if(!ep){
+    document.getElementById('ctr-status').textContent='Server unreachable at '+API+' — start the server first.';
+    document.getElementById('ctr-rows').innerHTML='<span style="color:var(--red)">Cannot reach '+API+'. Run start.py then retry.</span>';
     btn.disabled=false; btn.textContent='↻ Retry';
     return;
+  }
+
+  const isHealthMode=ep.mode==='health';
+  document.getElementById('ctr-status').textContent=(isHealthMode
+    ? 'System not initialized — measuring server round-trip latency (baseline only). Initialize the system for full AI timing.'
+    : 'Testing via '+ep.label+'…');
+
+  const coldTimes=[],warmTimes=[];
+  let html='';
+  const prompts=isHealthMode?['ping 1','ping 2','ping 3']:TEST_PROMPTS;
+  const body=isHealthMode?null:{query:'',top_k:1,min_score:0.0};
+
+  for(let i=0;i<prompts.length;i++){
+    document.getElementById('ctr-status').textContent='Probe '+(i+1)+'/'+prompts.length+' — cold…';
+    const cb=isHealthMode?null:{...body,query:prompts[i]};
+    const cold=await _timedProbe(ep.path,cb);
+    await new Promise(r=>setTimeout(r,150));
+
+    document.getElementById('ctr-status').textContent='Probe '+(i+1)+'/'+prompts.length+' — warm…';
+    const warm=await _timedProbe(ep.path,cb);
+    await new Promise(r=>setTimeout(r,250));
+
+    coldTimes.push(cold.ms); warmTimes.push(warm.ms);
+    const ratio=(cold.ms/warm.ms).toFixed(1);
+    html+=`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--muted);font-size:10.5px">${isHealthMode?'Server ping '+(i+1):prompts[i]}</span>
+      <span style="font-weight:600;font-size:11px">cold ${(cold.ms/1000).toFixed(2)}s → warm ${(warm.ms/1000).toFixed(2)}s (${ratio}×)</span>
+    </div>`;
+  }
+  document.getElementById('ctr-rows').innerHTML=html;
+
+  if(!coldTimes.length){
+    document.getElementById('ctr-status').textContent='All probes failed — server unreachable.';
+    btn.disabled=false; btn.textContent='↻ Retry';
+    return;
+  }
+  if(isHealthMode){
+    document.getElementById('ctr-status').textContent=
+      'Baseline measured (server ping only). Initialize the system with a teacher model to measure real AI response times.';
   }
 
   const coldAvg=coldTimes.reduce((a,b)=>a+b,0)/coldTimes.length;
