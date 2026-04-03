@@ -2,20 +2,226 @@
 const API = window.location.origin;
 const WS  = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/training`;
 
+/* ─── Firebase ───────────────────────────────────────────────── */
+const FIREBASE_CONFIG = {
+  apiKey:            'AIzaSyDkbAhy7PlrYzHR5F-EDBquUtZ9fwLsyHg',
+  authDomain:        'logiik.firebaseapp.com',
+  projectId:         'logiik',
+  storageBucket:     'logiik.firebasestorage.app',
+  messagingSenderId: '835296209489',
+  appId:             '1:835296209489:web:830f7cc853e729ecc42670',
+};
+
+let db            = null;
+let _writeTimer   = null;
+
+function initFirebase() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+  } catch (e) {
+    console.warn('Firebase init failed:', e);
+  }
+}
+
+async function _fetchPINFromFirestore() {
+  if (!db) return null;
+  try {
+    const snap = await db.collection('app_config').doc('pin').get();
+    if (snap.exists) return snap.data().value;
+    await db.collection('app_config').doc('pin').set({ value: '5522' });
+    return '5522';
+  } catch (_) { return null; }
+}
+
+function _scheduleFirestoreWrite() {
+  if (!db) return;
+  clearTimeout(_writeTimer);
+  _writeTimer = setTimeout(async () => {
+    try {
+      const key = state.persistenceKey || 'default';
+      await db.collection('sessions').doc(key).set({
+        steps:     state.steps,
+        trainLoss: state.trainLoss,
+        valSteps:  state.valSteps,
+        valLoss:   state.valLoss,
+        valPpl:    state.valPpl,
+        phase:     state.phase,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }, 2000);
+}
+
+async function _restoreFromFirestore() {
+  if (!db) return;
+  try {
+    const key  = state.persistenceKey || 'default';
+    const snap = await db.collection('sessions').doc(key).get();
+    if (!snap.exists) return;
+    const d = snap.data();
+    if (Array.isArray(d.steps) && d.steps.length) {
+      state.steps     = d.steps;
+      state.trainLoss = Array.isArray(d.trainLoss) ? d.trainLoss : [];
+      state.valSteps  = Array.isArray(d.valSteps)  ? d.valSteps  : [];
+      state.valLoss   = Array.isArray(d.valLoss)   ? d.valLoss   : [];
+      state.valPpl    = Array.isArray(d.valPpl)    ? d.valPpl    : [];
+      state.phase     = d.phase || null;
+      addLog('system', 'State restored from Firestore');
+    }
+  } catch (_) {}
+}
+
+async function _writePhaseEvent(phase, step) {
+  if (!db) return;
+  try {
+    await db.collection('phase_events').add({
+      phase,
+      step:      step ?? null,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (_) {}
+}
+
+async function _writeQAEvent(bankCount, step) {
+  if (!db) return;
+  try {
+    await db.collection('qa_events').add({
+      bank_count: bankCount,
+      step:       step ?? null,
+      timestamp:  firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (_) {}
+}
+
+/* ─── PIN Lock Screen ────────────────────────────────────────── */
+let _resolvedPIN = '5522';
+
+async function initPINScreen() {
+  if (sessionStorage.getItem('nero-pin-verified') === '1') {
+    _hidePINScreen();
+    return;
+  }
+  // Screen is already visible from HTML default; fetch remote PIN asynchronously
+  const remote = await _fetchPINFromFirestore();
+  if (remote) _resolvedPIN = remote;
+  document.getElementById('pin-input').focus();
+}
+
+function verifyPIN() {
+  const entered = document.getElementById('pin-input').value;
+  const errEl   = document.getElementById('pin-error');
+  if (entered === _resolvedPIN) {
+    sessionStorage.setItem('nero-pin-verified', '1');
+    errEl.style.visibility = 'hidden';
+    _hidePINScreen();
+  } else {
+    errEl.style.visibility = 'visible';
+    document.getElementById('pin-input').value = '';
+    document.getElementById('pin-input').focus();
+  }
+}
+
+function _hidePINScreen() {
+  const el = document.getElementById('pin-screen');
+  if (el) el.style.display = 'none';
+}
+
+/* ─── AI Model Configuration ─────────────────────────────────── */
+const modelConfig = {
+  apiKey:      '',
+  baseUrl:     '',
+  modelId:     '',
+  initialized: false,
+};
+
+function _loadModelConfigFromStorage() {
+  const apiKey  = localStorage.getItem('nero-mc-apikey');
+  const baseUrl = localStorage.getItem('nero-mc-baseurl');
+  const modelId = localStorage.getItem('nero-mc-model');
+  if (apiKey)  { const el = document.getElementById('mc-apikey');  if (el) el.value = apiKey;  modelConfig.apiKey  = apiKey;  }
+  if (baseUrl) { const el = document.getElementById('mc-baseurl'); if (el) el.value = baseUrl; modelConfig.baseUrl = baseUrl; }
+  if (modelId) { const el = document.getElementById('mc-model');   if (el) el.value = modelId; modelConfig.modelId = modelId; }
+  if (apiKey && baseUrl && modelId) {
+    modelConfig.initialized = true;
+    _syncModelConfigToLegacy();
+    _setMCStatus(true, modelId);
+  }
+}
+
+function _syncModelConfigToLegacy() {
+  const fApiKey  = document.getElementById('f-apikey');
+  const fBaseUrl = document.getElementById('f-baseurl');
+  const fModel   = document.getElementById('f-model');
+  if (fApiKey)  fApiKey.value  = modelConfig.apiKey;
+  if (fBaseUrl) fBaseUrl.value = modelConfig.baseUrl;
+  if (fModel)   fModel.value   = modelConfig.modelId;
+}
+
+function _setMCStatus(live, label) {
+  const dot  = document.getElementById('mc-dot');
+  const text = document.getElementById('mc-status-text');
+  if (dot)  dot.className  = live ? 'mc-dot live' : 'mc-dot';
+  if (text) text.textContent = live ? `Connected · ${label}` : 'Not configured';
+}
+
+async function initModelConfig() {
+  const apiKey  = document.getElementById('mc-apikey').value.trim();
+  const baseUrl = document.getElementById('mc-baseurl').value.trim();
+  const modelId = document.getElementById('mc-model').value.trim();
+  const msg     = document.getElementById('mc-msg');
+
+  if (!apiKey || !baseUrl || !modelId) {
+    msg.textContent = 'All three fields are required.';
+    msg.className   = 'init-msg error';
+    return;
+  }
+
+  msg.textContent = 'Validating…';
+  msg.className   = 'init-msg pending';
+
+  modelConfig.apiKey      = apiKey;
+  modelConfig.baseUrl     = baseUrl;
+  modelConfig.modelId     = modelId;
+  modelConfig.initialized = true;
+
+  localStorage.setItem('nero-mc-apikey',  apiKey);
+  localStorage.setItem('nero-mc-baseurl', baseUrl);
+  localStorage.setItem('nero-mc-model',   modelId);
+
+  _syncModelConfigToLegacy();
+
+  try {
+    const res = await fetch(`${API}/health`);
+    if (res.ok) {
+      msg.textContent = 'Config saved — connection active.';
+      msg.className   = 'init-msg success';
+      _setMCStatus(true, modelId);
+    } else {
+      throw new Error();
+    }
+  } catch {
+    msg.textContent = 'Config saved — server unreachable, will connect when available.';
+    msg.className   = 'init-msg pending';
+    _setMCStatus(false, '');
+  }
+}
+
 /* ─── State ──────────────────────────────────────────────────── */
 const state = {
-  initialized:     false,
-  training:        false,
+  initialized:      false,
+  training:         false,
   trainingComplete: false,
-  phase:           null,
-  steps:           [],
-  trainLoss:       [],
-  valLoss:         [],
-  valPpl:          [],
-  valSteps:        [],
-  logEntries:      [],
-  persistenceKey:  'nero-session-default',
-  historyLoaded:   false,
+  phase:            null,
+  steps:            [],
+  trainLoss:        [],
+  valLoss:          [],
+  valPpl:           [],
+  valSteps:         [],
+  logEntries:       [],
+  persistenceKey:   'nero-session-default',
+  historyLoaded:    false,
+  _lastBankCount:   null,
 };
 
 /* ─── Phase definitions ──────────────────────────────────────── */
@@ -105,9 +311,10 @@ async function browseFolder() {
 }
 
 async function initializeSystem() {
-  const apiKey    = document.getElementById('f-apikey').value.trim();
-  const baseUrl   = document.getElementById('f-baseurl').value.trim();
-  const model     = document.getElementById('f-model').value.trim();
+  // Prefer model config state; fall back to hidden legacy fields
+  const apiKey  = modelConfig.apiKey  || document.getElementById('f-apikey').value.trim();
+  const baseUrl = modelConfig.baseUrl || document.getElementById('f-baseurl').value.trim();
+  const model   = modelConfig.modelId || document.getElementById('f-model').value.trim();
   const topicsRaw = document.getElementById('f-topics').value.trim();
   const kbPath    = document.getElementById('f-kbpath').value.trim() || './knowledge_base';
   const threshold = parseInt(document.getElementById('f-threshold').value, 10);
@@ -213,11 +420,57 @@ async function startTraining() {
   }
 }
 
-async function stopTraining() {
-  await fetch(`${API}/train/stop`, { method: 'POST' });
+async function pauseTraining() {
+  try {
+    await fetch(`${API}/train/stop`, { method: 'POST' });
+  } catch (_) {}
   state.training = false;
   setStatus('Paused', 'paused');
-  addLog('system', 'Training stopped');
+  // Preserve full state to both localStorage and Firestore before halting
+  _persistState();
+  _scheduleFirestoreWrite();
+  addLog('system', 'Training paused — state preserved');
+}
+
+// Keep old name as alias so any other callers still work
+const stopTraining = pauseTraining;
+
+/* ─── Download phase output ──────────────────────────────────── */
+async function downloadPhaseOutput() {
+  try {
+    let report = null;
+    try {
+      const r = await fetch(`${API}/logs/report`);
+      if (r.ok) report = await r.json();
+    } catch (_) {}
+
+    const output = {
+      phase:             state.phase,
+      training_complete: state.trainingComplete,
+      final_metrics: {
+        total_steps:   state.steps.length,
+        last_step:     state.steps.at(-1)    ?? null,
+        last_loss:     state.trainLoss.at(-1) ?? null,
+        last_val_loss: state.valLoss.at(-1)   ?? null,
+        last_val_ppl:  state.valPpl.at(-1)    ?? null,
+      },
+      report:      report,
+      exported_at: new Date().toISOString(),
+    };
+
+    const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `nero-phase-output-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog('system', 'Phase output downloaded as JSON');
+  } catch (e) {
+    addLog('error', 'Download failed: ' + e.message);
+  }
 }
 
 async function exportKnowledge() {
@@ -363,6 +616,8 @@ function connectWS() {
         state.valPpl.push(m.val_perplexity);
       }
       _persistState();
+      // Throttled Firestore write (debounced 2 s)
+      _scheduleFirestoreWrite();
     }
 
     // Phase tracking
@@ -370,6 +625,13 @@ function connectWS() {
       state.phase = m.phase;
       renderPhases();
       addLog('phase', `Phase changed → ${m.phase}`);
+      _writePhaseEvent(m.phase, m.step);
+    }
+
+    // Q&A bank events — write snapshot whenever bank_count changes
+    if (m.bank_count != null && m.bank_count !== state._lastBankCount) {
+      state._lastBankCount = m.bank_count;
+      _writeQAEvent(m.bank_count, m.step);
     }
 
     // Metric cards
@@ -419,8 +681,13 @@ function connectWS() {
       state.training = false;
       setStatus('Complete', 'complete');
       document.getElementById('complete-banner').style.display = 'flex';
+      // Show conditional Download button now that phase is complete
+      const dlBtn = document.getElementById('btn-download');
+      if (dlBtn) dlBtn.style.display = 'inline-block';
       addLog('phase', 'Training complete — repeat threshold reached');
       loadReport();
+      // Final Firestore persist on completion
+      _scheduleFirestoreWrite();
     }
 
     // Extend charts if monitor tab visible
@@ -738,14 +1005,33 @@ function initTheme() {
 
 /* ─── Boot ───────────────────────────────────────────────────── */
 (async function init() {
+  // 1. Firebase must come first (PIN fetch depends on it)
+  initFirebase();
+
+  // 2. PIN screen — blocks UI via overlay; app init continues behind it
+  initPINScreen(); // async, no await needed — PIN check is non-blocking
+
+  // 3. Theme + saved model config
   initTheme();
+  _loadModelConfigFromStorage();
+
+  // 4. Derive session key and restore local state
   state.persistenceKey = _sessionKey(localStorage.getItem('nero-f-kbpath') || '');
   _restoreState();
 
-  // Auto-save form fields to localStorage as the user types
-  ['f-apikey', 'f-baseurl', 'f-model', 'f-kbpath', 'f-threshold', 'f-topics'].forEach(id => {
+  // 5. Restore richer state from Firestore (overwrites localStorage if more data exists)
+  await _restoreFromFirestore();
+
+  // 6. Auto-save training form fields to localStorage
+  ['f-kbpath', 'f-threshold', 'f-topics'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', () => localStorage.setItem('nero-' + id, el.value));
+  });
+
+  // 7. Auto-save model config fields to localStorage + state as user types
+  [['mc-apikey', 'nero-mc-apikey'], ['mc-baseurl', 'nero-mc-baseurl'], ['mc-model', 'nero-mc-model']].forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => localStorage.setItem(key, el.value));
   });
 
   renderPhases();

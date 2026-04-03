@@ -1049,3 +1049,96 @@ footer {
   .help-diagram { flex-direction: column; align-items: flex-start; }
   .logs-summary { gap: 1rem; }
 }
+
+/* ─── PIN Lock Screen ────────────────────────────────────────── */
+.pin-screen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pin-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2.5rem 2rem;
+  width: 340px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+}
+
+.pin-logo {
+  font-family: 'MuseoModerno', sans-serif;
+  font-size: 2rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: .25rem;
+}
+
+.pin-card h2 { font-size: 1.1rem; font-weight: 700; }
+
+.pin-input {
+  width: 100%;
+  padding: .75rem 1rem;
+  font-size: 1.4rem;
+  letter-spacing: .35em;
+  text-align: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color .15s;
+}
+.pin-input:focus { outline: none; border-color: var(--accent); }
+
+.pin-error {
+  color: var(--red);
+  font-size: .84rem;
+  font-weight: 500;
+  min-height: 1.2em;
+}
+
+/* ─── Model Config Status Badge ──────────────────────────────── */
+.mc-status {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .8rem;
+  color: var(--muted);
+  padding: .4rem .75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: .4rem;
+}
+
+.mc-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+.mc-dot.live { background: var(--green); animation: pulse-dot 2s infinite; }
+
+/* ─── Pause button ───────────────────────────────────────────── */
+.btn.btn-orange { background: #fff3e0; color: var(--orange); border-color: #ffe0b2; }
+.btn.btn-orange:hover:not(:disabled) { background: #ffe0b2; }
+
+/* ─── Download / Export button ───────────────────────────────── */
+.btn.btn-download {
+  background: linear-gradient(135deg, #4ECDC4, #44a8a1);
+  color: #fff;
+  border: none;
+}
+.btn.btn-download:hover:not(:disabled) { opacity: .88; }
+
+.status-badge.complete { background: #e8f5e9; color: var(--green); }
