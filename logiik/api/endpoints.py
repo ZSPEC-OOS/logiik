@@ -771,10 +771,9 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
 
     import openai as _openai
     import json as _json
-    from logiik.storage.text_store import TextStore as _TextStore
 
     client = _openai.OpenAI(api_key=api_key, base_url=base_url)
-    _text_store = _TextStore()
+    _fb_store = TextStore()
     phases, min_per_topic, max_per_topic, check_interval = _load_curriculum_phases()
     criteria_map = _load_phase_criteria()
     total_phases = len(phases)
@@ -955,7 +954,11 @@ async def _qa_generation_loop(api_key: str, base_url: str, model_id: str):
                         }
                         _append_record(out_path, record)
                         _record_id = f"p{phase_id:02d}_{total_saved:06d}"
-                        _text_store.store_training_record(_record_id, record)
+                        _fb_ok = _fb_store.store_training_record(_record_id, record)
+                        if _fb_ok:
+                            logger.info("Firebase synced record %s", _record_id)
+                        else:
+                            logger.warning("Firebase sync FAILED for record %s (check FIREBASE_API_KEY in .env)", _record_id)
                         topic_pool.append(data["question"])
 
                         ex_idx      += 1
