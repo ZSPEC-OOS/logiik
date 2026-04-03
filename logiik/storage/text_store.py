@@ -92,15 +92,8 @@ class TextStore:
         from pathlib import Path as _Path
         from dotenv import load_dotenv as _load_dotenv
         _load_dotenv(_Path(__file__).parent.parent.parent / ".env", override=True)
-        self._project = (
-            os.environ.get("FIREBASE_PROJECT")
-            or CONFIG["firebase"].get("project")
-            or self._DEFAULT_PROJECT
-        )
-        self._api_key = (
-            os.environ.get("FIREBASE_API_KEY")
-            or self._DEFAULT_API_KEY
-        )
+        self._project = os.environ.get("FIREBASE_PROJECT") or self._DEFAULT_PROJECT
+        self._api_key = os.environ.get("FIREBASE_API_KEY") or self._DEFAULT_API_KEY
         self._base = (
             f"https://firestore.googleapis.com/v1"
             f"/projects/{self._project}/databases/(default)/documents"
