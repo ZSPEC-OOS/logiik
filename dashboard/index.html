@@ -290,6 +290,64 @@
           </div>
         </div>
 
+        <!-- Cache Mode card -->
+        <div class="card" style="margin-bottom:1.25rem;">
+          <div class="cache-header">
+            <h2>Cache Mode</h2>
+            <label class="toggle-switch" title="Enable response caching">
+              <input type="checkbox" id="cache-enabled" onchange="onCacheToggle(this.checked)" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p class="muted" style="font-size:.85rem; margin-bottom:1.25rem;">
+            Cache teacher AI responses to avoid redundant API calls and speed up training.
+            Use the timing test below to measure actual prompt latency, then apply the auto-recommendation.
+          </p>
+
+          <div id="cache-settings" style="display:none;">
+            <!-- Duration input -->
+            <div class="cache-duration-row">
+              <label>Cache Duration</label>
+              <input type="number" id="cache-ttl-value" value="30" min="1" max="9999"
+                     oninput="updateCacheTTLDisplay()" />
+              <select id="cache-ttl-unit" onchange="updateCacheTTLDisplay()">
+                <option value="1">seconds</option>
+                <option value="60" selected>minutes</option>
+                <option value="3600">hours</option>
+              </select>
+              <span id="cache-ttl-display" class="muted" style="font-size:.8rem;">= 30 min</span>
+            </div>
+
+            <!-- Timing test -->
+            <div style="border-top:1px solid var(--border); padding-top:1.1rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem;">
+                <span style="font-size:.88rem; font-weight:600;">Prompt Timing Test</span>
+                <button id="btn-timing-test" class="btn btn-sm btn-primary"
+                        onclick="runCacheTimingTest()">▶ Run Test</button>
+              </div>
+              <p class="muted" style="font-size:.8rem; margin-bottom:1rem;">
+                Sends 5 sample prompts to the API and times each one.
+                Results drive a deep-review recommendation for your ideal cache duration.
+              </p>
+
+              <div id="cache-test-results" style="display:none;">
+                <div class="ctr-header">
+                  <span id="ctr-status" class="muted" style="font-size:.82rem;">Starting…</span>
+                </div>
+                <div id="ctr-times" class="ctr-times-list"></div>
+                <div id="ctr-avg" class="ctr-avg"></div>
+                <div id="ctr-recommendation" class="ctr-recommendation"></div>
+                <div id="ctr-deep-review"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Disabled hint shown when cache is off -->
+          <div id="cache-disabled-hint" style="font-size:.8rem; color:var(--muted);">
+            Enable cache mode to configure duration and run timing tests.
+          </div>
+        </div>
+
         <!-- Training Configuration card -->
         <div class="card">
           <h2>Training Configuration</h2>
