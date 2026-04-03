@@ -445,6 +445,18 @@ class TestPhase7Training:
         assert monitor.get_metrics()["covered_prompts"] == 5
         assert monitor.get_metrics()["coverage_ratio"] == 1.0
 
+    def test_set_retriever(self):
+        from logiik.core.training import GenerativeCurriculum
+        gc = GenerativeCurriculum.__new__(GenerativeCurriculum)
+        gc._retriever = None
+        gc._phase6_loop = None
+        gc._phase11_loop = None
+        gc._topic_cursors = {}
+        assert gc._retriever is None
+        mock = object()
+        gc.set_retriever(mock)
+        assert gc._retriever is mock
+
 
 # ─── INGESTION ────────────────────────────────────────────────────────────────
 
@@ -745,6 +757,68 @@ class TestAPI:
         assert len(tracks["integration"]["phases"]) == 2
         assert len(tracks["capstone"]["phases"]) == 1
         print("Curriculum endpoint: OK")
+
+    def test_ts_phase6_full_loop(self):
+        from logiik.api.endpoints import app, _ts_loops
+        from fastapi.testclient import TestClient
+        _ts_loops.clear()
+        client = TestClient(app)
+
+        # Register question
+        r = client.post("/logiik/ts/6/question", json={
+            "prompt": "Describe the role of ATP in muscle contraction.",
+            "answer_steps": [
+                "Step 1: myosin head binds ATP",
+                "Step 2: ATP hydrolysis drives power stroke",
+                "Step 3: ADP release resets myosin",
+            ],
+            "full_answer": (
+                "ATP binds to the myosin head causing detachment "
+                "from actin. Hydrolysis to ADP+Pi cocks the myosin "
+                "head. Pi release triggers the power stroke."
+            ),
+            "difficulty": 0.93,
+        })
+        assert r.status_code == 200
+        qid = r.json()["question_id"]
+
+        # Attempt
+        r2 = client.post("/logiik/ts/6/attempt", json={
+            "question_id": qid,
+            "student_answer_steps": ["ATP binds myosin"],
+            "student_full_answer": (
+                "ATP binds to myosin and is hydrolysed to power "
+                "the sliding filament mechanism in muscle contraction."
+            ),
+        })
+        assert r2.status_code == 200
+
+        # Feedback at threshold
+        r3 = client.post("/logiik/ts/6/feedback", json={
+            "question_id": qid,
+            "attempt_index": 0,
+            "feedback": ["Correct mechanism identified"],
+            "correctness": 0.91,
+        })
+        assert r3.status_code == 200
+        assert r3.json()["threshold_met"] == True
+        assert r3.json()["threshold"] == 0.90
+
+    def test_ts_invalid_phase_rejected(self):
+        from logiik.api.endpoints import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        for phase in [1, 2, 3, 4, 5, 7, 8, 9, 10, 12]:
+            r = client.post(f"/logiik/ts/{phase}/question",
+                json={
+                    "prompt": "test",
+                    "answer_steps": [],
+                    "full_answer": "test",
+                })
+            assert r.status_code == 400, (
+                f"Phase {phase} should be rejected "
+                f"but got {r.status_code}"
+            )
 
 
 # ─── SESSION MANAGER ─────────────────────────────────────────────────────────
